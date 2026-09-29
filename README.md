@@ -10,13 +10,10 @@ The project combines a Schneider Electric Modicon M241 PLC, six hardware pulse
 counters, five local DWIN panels, a central Haiwell HMI, an existing Weintek
 operator panel, a fault-tolerant .NET collector, SQLite and Microsoft SQL Server.
 
-> This repository is a sanitized engineering edition. Production IP addresses,
-> credentials, live databases, logs and company archives are intentionally not
-> included.
->
-> Editable PLC/HMI sources, macros and interface specifications are included;
-> vendor-generated binary artifacts and production screenshots are kept outside
-> the public repository.
+This is the public engineering version of the project. Operational addresses,
+credentials and live production data are replaced with local demonstration
+values. Vendor project archives will be added only after they are converted
+into a reviewable form and checked for embedded connection settings.
 
 ## What the system does
 
@@ -68,9 +65,8 @@ acknowledges an event after durable storage succeeds.
 
 | Path | Contents |
 |---|---|
-| `plc/` | IEC 61131-3 Structured Text, PLCopenXML import and protocol vectors |
+| `plc/` | IEC 61131-3 Structured Text sources and protocol vectors |
 | `server/` | .NET collector, EventJournal web service, SQL and automated tests |
-| `hmi/dwin/` | Local display project artifacts |
 | `hmi/haiwell/` | Screen specification, tag map and SQL history design |
 | `hmi/weintek/` | Sanitized macros adapted to the new PLC interface |
 | `hardware/` | Electrical interface diagrams |
@@ -113,7 +109,7 @@ Configuration shipped here is safe by default:
 | Roll and stop-journal queues | Implemented with persistent storage and explicit ACK |
 | .NET collector | Built, tested and deployed in the production environment |
 | SQL duplicate protection | Created and successfully checked |
-| DWIN communication package | Prepared; full five-panel commissioning remains to be recorded |
+| DWIN communication | PLC register map prepared; a reviewable panel export and commissioning record are pending |
 | Haiwell screens and event history | Designed and implemented in stages; final project archive is pending |
 | Weintek macro migration | Prepared; complete production scenario regression remains pending |
 | Automatic web-break splice | Engineering prototype stage |
@@ -127,10 +123,5 @@ verified work and planned work.
 CBPL-RMMS is a production-accounting and supervisory-control system. It is **not
 a functional-safety system** and must not replace machine emergency-stop,
 guarding or certified safety circuits.
-
-## Repository policy
-
-No open-source licence is granted at this stage. The repository is published as
-an engineering portfolio and technical reference. See [NOTICE](NOTICE.md).
 
 
