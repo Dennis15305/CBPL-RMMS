@@ -14,7 +14,7 @@ VAR_GLOBAL CONSTANT
     c_usiShift_1_StartHour           : USINT := USINT#8;              // Начало первой смены, 08:00.
     c_usiShift_2_StartHour           : USINT := USINT#20;             // Начало второй смены, 20:00.
     c_udiShiftMaxIntervalSeconds     : UDINT := UDINT#43200;          // Максимум одного сменного интервала: 12 часов.
-    c_udiLocalUtcOffsetSeconds       : UDINT := UDINT#10800;          // Брянск: UTC+3, то есть 3 часа.
+    c_udiLocalUtcOffsetSeconds       : UDINT := UDINT#10800;          // Локальное время: UTC+3.
     c_dwPersistentLayoutSignature    : DWORD := DWORD#16#4342504C;    // ASCII "CBPL": признак нашей структуры PERSISTENT.
     c_wPersistentLayoutVersion       : WORD  := WORD#2;                // Версия разметки постоянной памяти.
     c_wHaiwellProtocolVersion        : WORD  := WORD#2;                // Версия read-only карты центральной Haiwell.
@@ -60,3 +60,4 @@ VAR_GLOBAL CONSTANT
     c_wStopResultInvalidParameter    : WORD := WORD#3;
     c_wStopResultInvalidState        : WORD := WORD#4;                // Команда состояния противоречит движению энкодера.
 END_VAR
+
