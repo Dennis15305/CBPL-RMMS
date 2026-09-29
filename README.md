@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="assets/cbpl-rmms-logo.png" width="520" alt="CBPL-RMMS roll metering system">
-</p>
-
 # CBPL-RMMS
 
 **Corrugated Board Production Line — Raw Material Metering System**
@@ -17,6 +13,10 @@ operator panel, a fault-tolerant .NET collector, SQLite and Microsoft SQL Server
 > This repository is a sanitized engineering edition. Production IP addresses,
 > credentials, live databases, logs and company archives are intentionally not
 > included.
+>
+> Editable PLC/HMI sources, macros and interface specifications are included;
+> vendor-generated binary artifacts and production screenshots are kept outside
+> the public repository.
 
 ## What the system does
 
@@ -132,4 +132,5 @@ guarding or certified safety circuits.
 
 No open-source licence is granted at this stage. The repository is published as
 an engineering portfolio and technical reference. See [NOTICE](NOTICE.md).
+
 
