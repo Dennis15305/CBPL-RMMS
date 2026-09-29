@@ -1,0 +1,38 @@
+macro_definition_begin
+    "id": "19"
+    "name": "ConfirmSettings"
+    "startup": "false"
+    "periodic": [ "false" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+short Parametr_1=0, Parametr_2=0
+short StartLength=0, AreaCoefficient=0, ChangeoverSetpoint=0
+short Command=20, Sequence=0
+
+  GetData(Parametr_1, "Local HMI", LW, 11, 1)
+  GetData(Parametr_2, "Local HMI", RW, 12, 1)
+  
+  GetData(StartLength, "Schneider MODBUS TCP/IP", %MW, 2323, 1)
+  GetData(AreaCoefficient, "Schneider MODBUS TCP/IP", %MW, 2324, 1)
+  GetData(ChangeoverSetpoint, "Schneider MODBUS TCP/IP", %MW, 2322, 1)
+
+  if (Parametr_1 > 0) then
+    StartLength=Parametr_1
+  end if
+  if (Parametr_2 > 0) then
+    AreaCoefficient=Parametr_2
+  end if
+
+  SetData(StartLength, "Schneider MODBUS TCP/IP", %MW, 2365, 1)
+  SetData(AreaCoefficient, "Schneider MODBUS TCP/IP", %MW, 2366, 1)
+  SetData(ChangeoverSetpoint, "Schneider MODBUS TCP/IP", %MW, 2367, 1)
+
+  GetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2330, 1)
+  Sequence=Sequence+1
+  if (Sequence==0) then
+    Sequence=1
+  end if
+  SetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2361, 1)
+  SetData(Command, "Schneider MODBUS TCP/IP", %MW, 2360, 1)
+end macro_command

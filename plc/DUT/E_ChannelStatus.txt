@@ -1,0 +1,10 @@
+TYPE E_ChannelStatus :
+(
+    CHANNEL_STATUS_STARTING     := 0,    // Ожидание первого корректного отсчёта HSC.
+    CHANNEL_STATUS_RUNNING      := 1,    // Канал работает штатно.
+    CHANNEL_STATUS_HSC_INVALID  := 2,    // HSC временно не подтверждает достоверность данных.
+    CHANNEL_STATUS_HSC_ERROR    := 3,    // Аппаратный HSC сообщил об ошибке.
+    CHANNEL_STATUS_COUNTER_JUMP := 4,    // Обнаружен недопустимо большой скачок счётчика.
+    CHANNEL_STATUS_CONFIG_ERROR := 5     // Ошибка настроек диапазона HSC или пересчёта.
+);
+END_TYPE

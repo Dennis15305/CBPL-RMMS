@@ -1,0 +1,10 @@
+TYPE ST_RollEvent :
+STRUCT
+    udiEventId         : UDINT;          // Уникальный номер события; назначается постоянной очередью.
+    udiTimestampUtc    : UDINT;          // UNIX-время завершения рулона в секундах UTC.
+    usiUnwindNumber    : USINT;          // Постоянный физический номер раската 1...5.
+    usiShiftNumber     : USINT;          // Номер смены, в которой завершился рулон: 1 или 2.
+    eEndReason         : E_RollEndReason;// Причина завершения: SPLICE или допустимый RESET.
+    udiLengthMm        : UDINT;          // Итоговая длина завершённого рулона в миллиметрах, максимум около 4295 км.
+END_STRUCT
+END_TYPE

@@ -1,0 +1,3 @@
+VAR_GLOBAL
+    stSystem : ST_SystemDiagnostics; // Общая диагностика проекта для онлайн-контроля и будущей SCADA.
+END_VAR

@@ -1,0 +1,37 @@
+# Build output
+**/bin/
+**/obj/
+**/.vs/
+**/__pycache__/
+**/.pytest_cache/
+
+# Runtime state
+**/data/
+**/logs/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.log
+
+# Local and production configuration
+appsettings.Local.json
+appsettings.Production.json
+config.toml
+.env
+.env.*
+
+# Industrial project backups and exports
+*.bak
+*.backup
+*.zip
+*.7z
+*.rar
+*.projectarchive
+
+# Editors and operating systems
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
+

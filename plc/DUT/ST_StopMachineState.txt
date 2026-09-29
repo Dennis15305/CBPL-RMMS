@@ -1,0 +1,32 @@
+TYPE ST_StopMachineState :
+STRUCT
+    wStateCode                         : WORD;  // Текущее состояние ЛГК по таблице состояний.
+    wStatusBits                        : WORD;  // Диагностические признаки интерфейса Стопмашины.
+    wAlarmBits                         : WORD;  // Активные предупреждения интерфейса.
+    udiOrderNumber                     : UDINT; // Номер текущего заказа.
+    udiOrderDatabaseId                 : UDINT; // Ключ текущего заказа в БД.
+    udiOrderTechnicalCard              : UDINT; // Номер технологической карты.
+    uiOrderSourceShift                 : UINT;  // Номер смены из записи заказа сервера.
+    uiOrderNominalSpeed                : UINT;  // Номинальная скорость из записи заказа.
+    uiOperatorNumber                   : UINT;  // Номер оператора EB-панели.
+    udiCurrentOrderLengthDm            : UDINT; // Выпуск текущего заказа, 0,1 м.
+    udiShiftLengthDm                   : UDINT; // Выпуск текущей смены, 0,1 м.
+    udiCurrentOrderAreaX100            : UDINT; // Площадь текущего заказа, м2 x 100.
+    udiShiftAreaX100                   : UDINT; // Площадь текущей смены, м2 x 100.
+    uiSpeedDmPerMin                    : UINT;  // Скорость, 0,1 м/мин.
+    uiChangeoverRemainingTenthsMin     : UINT;  // Остаток переналадки, 0,1 мин.
+    usiLastBreakPoint                  : USINT; // Последняя точка обрыва: 1...5.
+    usiLastBreakSide                   : USINT; // Сторона: 1 верх, 2 низ.
+    usiLastBreakReason                 : USINT; // Причина: 1 сырьё, 2 оборудование, 3 машинист.
+    wLastCommandResult                 : WORD;  // Результат последней обработанной команды HMI.
+    wLastProcessedSequence             : WORD;  // Последовательность последней команды HMI.
+    wLastServerOrderResult              : WORD;  // Результат обработки последнего пакета заказа.
+    wLastServerOrderSequence            : WORD;  // Последовательность последнего пакета заказа.
+    xPackingComplete                   : BOOL;  // Оператор подтвердил завершение упаковки.
+    xChangeoverOverdue                 : BOOL;  // Превышено заданное время переналадки.
+    xCommandRejected                   : BOOL;  // Последняя полученная команда отклонена.
+    xConfigFault                       : BOOL;  // Некорректные сохранённые настройки.
+    xServerOrderValid                  : BOOL;  // PLC получил корректный заказ от сервера.
+    xInitialized                       : BOOL;  // Блок прошёл первичную инициализацию.
+END_STRUCT
+END_TYPE

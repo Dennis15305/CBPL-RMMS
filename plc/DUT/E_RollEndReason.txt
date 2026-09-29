@@ -1,0 +1,7 @@
+TYPE E_RollEndReason :
+(
+    ROLL_END_NONE   := 0,    // Рулон ещё не завершался.
+    ROLL_END_SPLICE := 1,    // Рулон завершён кнопкой SPLICE.
+    ROLL_END_RESET  := 2     // Рулон завершён ручной кнопкой RESET.
+);
+END_TYPE

@@ -1,0 +1,7 @@
+VAR_GLOBAL
+    udiHscAbs : ARRAY[1..6] OF UDINT; // Абсолютные показания шести аппаратных HSC.
+    xHscValid : ARRAY[1..6] OF BOOL;  // Достоверность выходов соответствующего HSC.
+    xHscError : ARRAY[1..6] OF BOOL;  // Ошибка соответствующего аппаратного HSC.
+    xReset    : ARRAY[1..5] OF BOOL;  // Кнопки RESET раскатов 1...5 с TM3DI16, входы I0...I4.
+    xSplice   : ARRAY[1..5] OF BOOL;  // Кнопки SPLICE раскатов 1...5 с TM3DI16, входы I5...I9.
+END_VAR

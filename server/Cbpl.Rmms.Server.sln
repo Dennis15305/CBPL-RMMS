@@ -1,0 +1,25 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cbpl.Rmms.Collector", "src\Cbpl.Rmms.Collector\Cbpl.Rmms.Collector.csproj", "{7AD09316-9B33-4D8C-9CB1-6F62D46EC4B6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Cbpl.Rmms.Collector.Tests", "tests\Cbpl.Rmms.Collector.Tests\Cbpl.Rmms.Collector.Tests.csproj", "{53EF5A9D-24FB-43F4-8930-ACBB2CE4A64B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{7AD09316-9B33-4D8C-9CB1-6F62D46EC4B6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7AD09316-9B33-4D8C-9CB1-6F62D46EC4B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7AD09316-9B33-4D8C-9CB1-6F62D46EC4B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7AD09316-9B33-4D8C-9CB1-6F62D46EC4B6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{53EF5A9D-24FB-43F4-8930-ACBB2CE4A64B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{53EF5A9D-24FB-43F4-8930-ACBB2CE4A64B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{53EF5A9D-24FB-43F4-8930-ACBB2CE4A64B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{53EF5A9D-24FB-43F4-8930-ACBB2CE4A64B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
+

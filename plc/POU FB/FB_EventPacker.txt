@@ -1,0 +1,102 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_EventPacker
+VAR_INPUT
+    i_xEventValid : BOOL;         // TRUE — входная структура содержит событие для передачи.
+    i_stEvent     : ST_RollEvent; // Первое неподтверждённое событие постоянной очереди.
+END_VAR
+
+VAR_OUTPUT
+    q_a_wPacket   : ARRAY[0..11] OF WORD; // Пакет протокола v2: 12 слов, старшие слова идут первыми.
+    q_xPacketValid: BOOL;                 // TRUE — пакет заполнен и CRC рассчитан.
+END_VAR
+
+VAR
+    iWord       : INT;  // Индекс слова при очистке пакета и вычислении CRC.
+    iByte       : INT;  // Индекс байта внутри слова: сначала старший, затем младший.
+    iBit        : INT;  // Индекс бита при вычислении CRC16 Modbus.
+    wCrc        : WORD; // Рабочее значение CRC16 Modbus.
+    wSourceWord : WORD; // Текущее слово пакета, участвующее в CRC.
+    byData      : BYTE; // Текущий байт пакета, участвующий в CRC.
+END_VAR
+
+VAR CONSTANT
+    c_wSignature      : WORD := WORD#16#CB01; // Сигнатура протокола CBPL, защищает от неверного разбора пакета.
+    c_wProtocolVersion: WORD := WORD#2;       // Версия 2: EventId и длина передаются как UDINT.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+q_xPacketValid := FALSE;
+
+FOR iWord := 0 TO 11 DO
+    q_a_wPacket[iWord] := WORD#0;
+END_FOR;
+
+
+IF i_xEventValid THEN
+
+    // 0: сигнатура; 1: версия протокола.
+    q_a_wPacket[0] := c_wSignature;
+    q_a_wPacket[1] := c_wProtocolVersion;
+
+    // 2...3: EventId UDINT, старшее слово идёт первым.
+    q_a_wPacket[2] := UDINT_TO_WORD(i_stEvent.udiEventId / UDINT#65536);
+    q_a_wPacket[3] := UDINT_TO_WORD(i_stEvent.udiEventId MOD UDINT#65536);
+
+    // 4...5: UNIX-время UTC UDINT, старшее слово идёт первым.
+    q_a_wPacket[4] := UDINT_TO_WORD(i_stEvent.udiTimestampUtc / UDINT#65536);
+    q_a_wPacket[5] := UDINT_TO_WORD(i_stEvent.udiTimestampUtc MOD UDINT#65536);
+
+    // 6...8: физический раскат, смена и причина передаются отдельными словами.
+    q_a_wPacket[6] := USINT_TO_WORD(i_stEvent.usiUnwindNumber);
+    q_a_wPacket[7] := USINT_TO_WORD(i_stEvent.usiShiftNumber);
+
+    CASE i_stEvent.eEndReason OF
+        ROLL_END_SPLICE:
+            q_a_wPacket[8] := WORD#1;
+        ROLL_END_RESET:
+            q_a_wPacket[8] := WORD#2;
+        ELSE
+            q_a_wPacket[8] := WORD#0;
+    END_CASE;
+
+    // 9...10: длина завершённого рулона в миллиметрах, UDINT.
+    q_a_wPacket[9] := UDINT_TO_WORD(i_stEvent.udiLengthMm / UDINT#65536);
+    q_a_wPacket[10] := UDINT_TO_WORD(i_stEvent.udiLengthMm MOD UDINT#65536);
+
+
+    // CRC16 Modbus по словам 0...10. В каждом слове сначала обрабатывается старший байт.
+    wCrc := WORD#16#FFFF;
+
+    FOR iWord := 0 TO 10 DO
+
+        wSourceWord := q_a_wPacket[iWord];
+
+        FOR iByte := 0 TO 1 DO
+
+            IF iByte = 0 THEN
+                byData := WORD_TO_BYTE(SHR(wSourceWord, 8));
+            ELSE
+                byData := WORD_TO_BYTE(wSourceWord AND WORD#16#00FF);
+            END_IF;
+
+            wCrc := wCrc XOR BYTE_TO_WORD(byData);
+
+            FOR iBit := 0 TO 7 DO
+                IF (wCrc AND WORD#1) <> WORD#0 THEN
+                    wCrc := SHR(wCrc, 1) XOR WORD#16#A001;
+                ELSE
+                    wCrc := SHR(wCrc, 1);
+                END_IF;
+            END_FOR;
+
+        END_FOR;
+
+    END_FOR;
+
+    q_a_wPacket[11] := wCrc;
+    q_xPacketValid := TRUE;
+
+END_IF;

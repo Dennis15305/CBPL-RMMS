@@ -1,0 +1,21 @@
+TYPE ST_StopJournalEvent :
+STRUCT
+    udiEventId                  : UDINT; // Постоянный ID события линии ЛГК.
+    udiTimestampUtc             : UDINT; // UNIX UTC; 0, если RTC неисправен.
+    wKind                       : WORD;  // 1=состояние, 2=завершение смены, 3=новый заказ.
+    wStateCode                  : WORD;  // Старые коды ProductionLine; 32768=граница смены.
+    wShiftNumber                : WORD;  // Смена, к которой относится снимок.
+    udiOrderNumber              : UDINT; // Номер заказа на момент события.
+    udiOrderLengthDm            : UDINT; // Метраж заказа, 0,1 м.
+    udiOrderAreaX100            : UDINT; // Площадь заказа, м2 x 100.
+    udiShiftLengthDm            : UDINT; // Метраж смены, 0,1 м.
+    udiShiftAreaX100            : UDINT; // Площадь смены, м2 x 100.
+    wSpeedDmPerMin              : WORD;  // Скорость, 0,1 м/мин.
+    wOperatorNumber             : WORD;  // Номер оператора.
+    wChangeoverSetpointTenthsMin: WORD;  // Норматив переналадки, 0,1 мин.
+    wAlarmBits                  : WORD;  // Диагностика нового ПЛК; не старый Status2.
+    wBreakPoint                 : WORD;  // Точка обрыва 1...5.
+    wBreakSide                  : WORD;  // Сторона обрыва 1...2.
+    wBreakReason                : WORD;  // Причина обрыва 1...3.
+END_STRUCT
+END_TYPE

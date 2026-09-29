@@ -1,0 +1,13 @@
+TYPE ST_StopJournalPersistent :
+STRUCT
+    a_stQueue        : ARRAY[0..127] OF ST_StopJournalEvent;
+    uiHead           : UINT;
+    uiTail           : UINT;
+    uiCount          : UINT;
+    udiNextEventId   : UDINT;
+    udiOverflowCount : UDINT;
+    uliLinePulses    : ULINT;
+    wLastState       : WORD;
+    dwSignature      : DWORD;
+END_STRUCT
+END_TYPE

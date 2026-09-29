@@ -1,0 +1,62 @@
+VAR_GLOBAL CONSTANT
+    c_iRollChannelCount              : INT   := 5;                    // Количество раскатов сырья.
+    c_iHscChannelCount               : INT   := 6;                    // Пять раскатов и один энкодер линии.
+    c_udiEncoderPulsesPerRevolution  : UDINT := UDINT#250;            // Импульсов энкодера за один оборот.
+    c_udiWheelCircumferenceMm        : UDINT := UDINT#250;            // Окружность каждого мерного колеса, мм.
+    c_udiHscCounterRange             : UDINT := UDINT#1000000000;     // Диапазон HSC: значения 0...999999999.
+    c_udiMaxPulseDeltaPerCycle       : UDINT := UDINT#100000;         // Защита от ложного скачка или сброса HSC.
+    c_tInputFilter                   : TIME  := T#50ms;                // Время подтверждения нажатия кнопки.
+    c_uliManualResetMinLengthMm      : ULINT := ULINT#100000;         // Минимум 100 м для учёта ручного RESET.
+    c_tSpeedSample                   : TIME  := T#1s;                  // Интервал обновления скорости линии.
+    c_tHaiwellActivityHold           : TIME  := T#10s;                 // Удержание признака движения для медленного опроса HMI.
+    c_tHaiwellFlashHalfPeriod        : TIME  := T#250ms;               // Три быстрые жёлтые вспышки: 0,25 с ВКЛ и 0,25 с ВЫКЛ.
+    c_tHaiwellResetHold              : TIME  := T#3s;                  // Время показа состояния RESET на центральной HMI.
+    c_usiShift_1_StartHour           : USINT := USINT#8;              // Начало первой смены, 08:00.
+    c_usiShift_2_StartHour           : USINT := USINT#20;             // Начало второй смены, 20:00.
+    c_udiShiftMaxIntervalSeconds     : UDINT := UDINT#43200;          // Максимум одного сменного интервала: 12 часов.
+    c_udiLocalUtcOffsetSeconds       : UDINT := UDINT#10800;          // Брянск: UTC+3, то есть 3 часа.
+    c_dwPersistentLayoutSignature    : DWORD := DWORD#16#4342504C;    // ASCII "CBPL": признак нашей структуры PERSISTENT.
+    c_wPersistentLayoutVersion       : WORD  := WORD#2;                // Версия разметки постоянной памяти.
+    c_wHaiwellProtocolVersion        : WORD  := WORD#2;                // Версия read-only карты центральной Haiwell.
+
+    // Отдельный интерфейс Стопмашины ЛГК. Он не содержит номера линии.
+    c_wStopMachineSignature          : WORD  := WORD#16#534D;         // ASCII "SM".
+    c_wStopMachineProtocolVersion    : WORD  := WORD#2;
+    c_wServerOrderApplyCommand       : WORD  := WORD#16#4F52;         // ASCII "OR": применить пакет заказа сервера.
+    c_uiStopDefaultAreaCoefficientX100 : UINT := UINT#210;            // 2,10 м2 на метр.
+    c_uiStopDefaultStartDetectLengthDm : UINT := UINT#500;            // 50,0 м.
+    c_uiStopDefaultChangeoverTenthsMin : UINT := UINT#0;              // Таймер отключён до настройки.
+    c_tStopNoFeedDelay               : TIME  := T#20s;
+
+    c_wStopStateRunning              : WORD := WORD#1;
+    c_wStopStateStopped              : WORD := WORD#2;
+    c_wStopStateNoFeed               : WORD := WORD#8;
+    c_wStopStateChangeover           : WORD := WORD#16;
+    c_wStopStateProduction           : WORD := WORD#32;
+    c_wStopStatePpr                  : WORD := WORD#64;
+    c_wStopStateLunch                : WORD := WORD#128;
+    c_wStopStateRepair               : WORD := WORD#256;
+    c_wStopStateAlarm                : WORD := WORD#512;
+    c_wStopStateTechnology           : WORD := WORD#1024;
+    c_wStopStateBreak                : WORD := WORD#2048;
+
+    c_wStopCommandStop               : WORD := WORD#1;
+    c_wStopCommandStart              : WORD := WORD#2;
+    c_wStopCommandChangeover         : WORD := WORD#3;
+    c_wStopCommandProduction         : WORD := WORD#4;
+    c_wStopCommandLunch              : WORD := WORD#5;
+    c_wStopCommandPpr                : WORD := WORD#6;
+    c_wStopCommandRepair             : WORD := WORD#7;
+    c_wStopCommandAlarm              : WORD := WORD#8;
+    c_wStopCommandTechnology         : WORD := WORD#9;
+    c_wStopCommandBreak              : WORD := WORD#10;
+    c_wStopCommandPackingComplete    : WORD := WORD#11;
+    c_wStopCommandSetOperator        : WORD := WORD#12;
+    c_wStopCommandApplySettings      : WORD := WORD#20;
+
+    c_wStopResultNone                : WORD := WORD#0;
+    c_wStopResultAccepted            : WORD := WORD#1;
+    c_wStopResultInvalidCode         : WORD := WORD#2;
+    c_wStopResultInvalidParameter    : WORD := WORD#3;
+    c_wStopResultInvalidState        : WORD := WORD#4;                // Команда состояния противоречит движению энкодера.
+END_VAR

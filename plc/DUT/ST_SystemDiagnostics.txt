@@ -1,0 +1,11 @@
+TYPE ST_SystemDiagnostics :
+STRUCT
+    a_eHscStatus      : ARRAY[1..6] OF E_ChannelStatus; // Состояния шести каналов HSC.
+    a_xHscFault       : ARRAY[1..6] OF BOOL;            // Ошибка соответствующего канала HSC.
+    a_xHmiOverflow    : ARRAY[1..5] OF BOOL;            // Значение канала не помещается в 32 бита DWIN.
+    xAnyHscFault      : BOOL;                           // Есть хотя бы одна ошибка HSC.
+    xAnyConfigFault   : BOOL;                           // Есть ошибка параметров пересчёта.
+    xRtcFault         : BOOL;                           // Не удалось получить время контроллера.
+    uliProgramCycles  : ULINT;                          // Счётчик циклов SR_Main для диагностики.
+END_STRUCT
+END_TYPE

@@ -1,0 +1,9 @@
+TYPE ST_LineState :
+STRUCT
+    uliTotalPulses   : ULINT;  // Общее число импульсов шестого энкодера после запуска ПЛК.
+    uliTotalLengthMm : ULINT;  // Общий метраж линии в миллиметрах после запуска ПЛК.
+    rSpeedMPerMin    : REAL;   // Текущая скорость линии в метрах в минуту.
+    xMoving          : BOOL;   // TRUE, если за последний интервал пришли импульсы.
+    xConfigFault     : BOOL;   // Ошибка параметров энкодера, колеса или интервала скорости.
+END_STRUCT
+END_TYPE

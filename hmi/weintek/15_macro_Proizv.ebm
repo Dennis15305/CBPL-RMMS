@@ -1,0 +1,23 @@
+macro_definition_begin
+    "id": "15"
+    "name": "macro_Proizv"
+    "startup": "false"
+    "periodic": [ "false" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+short Command=4, Sequence=0, Param=0, F=false
+
+GetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2330, 1)
+Sequence=Sequence+1
+if (Sequence==0) then
+  Sequence=1
+end if
+
+SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2362, 1)
+SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2363, 1)
+SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2364, 1)
+SetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2361, 1)
+SetData(Command, "Schneider MODBUS TCP/IP", %MW, 2360, 1)
+SetData(F, "Local HMI", LB, 13, 1)
+end macro_command

@@ -1,0 +1,25 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_InputFilter
+VAR_INPUT
+    i_xRaw     : BOOL; // Необработанный дискретный сигнал физического входа.
+    i_tOnDelay : TIME; // Минимальное время непрерывного сигнала TRUE.
+END_VAR
+
+VAR_OUTPUT
+    q_xFiltered : BOOL; // Отфильтрованный сигнал без коротких импульсов и дребезга.
+END_VAR
+
+VAR
+    fbOnDelay : TON; // Стандартный таймер подтверждения входного сигнала.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+fbOnDelay(
+    IN := i_xRaw,
+    PT := i_tOnDelay
+);
+
+q_xFiltered := fbOnDelay.Q;

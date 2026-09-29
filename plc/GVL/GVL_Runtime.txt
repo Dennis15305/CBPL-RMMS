@@ -1,0 +1,6 @@
+VAR_GLOBAL
+    a_stHscState  : ARRAY[1..6] OF ST_HscState;  // Рабочее состояние шести каналов HSC.
+    stLineState   : ST_LineState;                // Скорость и общий метраж шестого энкодера.
+    stShiftState  : ST_ShiftState;               // Номер смены и состояние часов контроллера.
+    stStopMachine : ST_StopMachineState;         // Изолированное состояние Стопмашины линии ЛГК.
+END_VAR

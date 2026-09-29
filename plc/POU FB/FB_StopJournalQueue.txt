@@ -1,0 +1,99 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_StopJournalQueue
+VAR_INPUT
+    i_a_xEnqueue   : ARRAY[1..2] OF BOOL; // 1=граница смены, 2=переход состояния/заказ.
+    i_a_stEvent    : ARRAY[1..2] OF ST_StopJournalEvent;
+    i_udiAckEventId: UDINT;
+    i_wAckCommand  : WORD;
+END_VAR
+
+VAR_IN_OUT
+    iq_a_stQueue    : ARRAY[0..127] OF ST_StopJournalEvent;
+    iq_uiHead       : UINT;
+    iq_uiTail       : UINT;
+    iq_uiCount      : UINT;
+    iq_udiNextId    : UDINT;
+    iq_udiOverflow  : UDINT;
+END_VAR
+
+VAR_OUTPUT
+    q_xReady        : BOOL;
+    q_stHead        : ST_StopJournalEvent;
+    q_xFull         : BOOL;
+    q_xStorageFault : BOOL;
+    q_xIdExhausted  : BOOL;
+    q_xAckConsumed  : BOOL;
+    q_xAckAccepted  : BOOL;
+    q_xAckRejected  : BOOL;
+END_VAR
+
+VAR
+    iEvent          : INT;
+    stToAdd         : ST_StopJournalEvent;
+    stEmpty         : ST_StopJournalEvent;
+END_VAR
+
+// ==================== IMPLEMENTATION ====================
+
+q_xAckConsumed := FALSE;
+q_xAckAccepted := FALSE;
+q_xAckRejected := FALSE;
+q_xIdExhausted := FALSE;
+
+q_xStorageFault :=
+    (iq_uiHead > UINT#127)
+    OR (iq_uiTail > UINT#127)
+    OR (iq_uiCount > UINT#128)
+    OR (iq_udiNextId = UDINT#0);
+
+IF NOT q_xStorageFault THEN
+    // Только подтверждение головы очереди освобождает событие.
+    IF i_wAckCommand = WORD#16#A55B THEN
+        q_xAckConsumed := TRUE;
+        IF (iq_uiCount > UINT#0)
+           AND (iq_a_stQueue[iq_uiHead].udiEventId = i_udiAckEventId) THEN
+            IF iq_uiHead = UINT#127 THEN
+                iq_uiHead := UINT#0;
+            ELSE
+                iq_uiHead := iq_uiHead + UINT#1;
+            END_IF;
+            iq_uiCount := iq_uiCount - UINT#1;
+            q_xAckAccepted := TRUE;
+        ELSE
+            q_xAckRejected := TRUE;
+        END_IF;
+    END_IF;
+
+    FOR iEvent := 1 TO 2 DO
+        IF i_a_xEnqueue[iEvent] THEN
+            IF (iq_uiCount < UINT#128)
+               AND (iq_udiNextId < UDINT#4294967295) THEN
+                stToAdd := i_a_stEvent[iEvent];
+                stToAdd.udiEventId := iq_udiNextId;
+                iq_a_stQueue[iq_uiTail] := stToAdd;
+                IF iq_uiTail = UINT#127 THEN
+                    iq_uiTail := UINT#0;
+                ELSE
+                    iq_uiTail := iq_uiTail + UINT#1;
+                END_IF;
+                iq_uiCount := iq_uiCount + UINT#1;
+                iq_udiNextId := iq_udiNextId + UDINT#1;
+            ELSIF iq_udiNextId >= UDINT#4294967295 THEN
+                q_xIdExhausted := TRUE;
+            ELSE
+                IF iq_udiOverflow < UDINT#4294967295 THEN
+                    iq_udiOverflow := iq_udiOverflow + UDINT#1;
+                END_IF;
+            END_IF;
+        END_IF;
+    END_FOR;
+END_IF;
+
+q_xFull := iq_uiCount >= UINT#128;
+q_xReady := (iq_uiCount > UINT#0) AND NOT q_xStorageFault;
+IF q_xReady THEN
+    q_stHead := iq_a_stQueue[iq_uiHead];
+ELSE
+    q_stHead := stEmpty;
+END_IF;

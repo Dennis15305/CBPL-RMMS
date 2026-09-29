@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1000" viewBox="0 0 1600 1000">
+  <defs>
+    <style>
+      .title { font: 700 34px 'Segoe UI', Arial, sans-serif; fill: #172033; }
+      .h2 { font: 700 25px 'Segoe UI', Arial, sans-serif; fill: #172033; }
+      .txt { font: 22px 'Segoe UI', Arial, sans-serif; fill: #172033; }
+      .small { font: 18px 'Segoe UI', Arial, sans-serif; fill: #344054; }
+      .note { font: 700 19px 'Segoe UI', Arial, sans-serif; fill: #b42318; }
+      .wire { fill: none; stroke: #172033; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round; }
+      .plus { fill: none; stroke: #d92d20; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+      .zero { fill: none; stroke: #1570ef; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
+      .mech { fill: none; stroke: #667085; stroke-width: 5; stroke-dasharray: 14 12; }
+      .box { fill: #ffffff; stroke: #475467; stroke-width: 4; rx: 18; }
+      .zone1 { fill: #eff8ff; stroke: #84caff; stroke-width: 4; rx: 26; }
+      .zone2 { fill: #f6fef9; stroke: #75e0a7; stroke-width: 4; rx: 26; }
+      .node { fill: #172033; }
+      .arrow { marker-end: url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,8 L10,4 z" fill="#172033"/>
+    </marker>
+  </defs>
+
+  <rect width="1600" height="1000" fill="#f8fafc"/>
+  <text x="800" y="58" text-anchor="middle" class="title">Команда Splice через промежуточное реле</text>
+  <text x="800" y="92" text-anchor="middle" class="small">Центральный и местный 0 V электрически не соединяются</text>
+
+  <rect x="45" y="125" width="620" height="770" class="zone1"/>
+  <text x="355" y="170" text-anchor="middle" class="h2">ЦЕНТРАЛЬНЫЙ ШКАФ</text>
+
+  <text x="90" y="230" class="txt" fill="#d92d20">+24 V CENTRAL</text>
+  <path d="M90 250 H570" class="plus"/>
+
+  <rect x="125" y="315" width="315" height="145" class="box"/>
+  <text x="282" y="360" text-anchor="middle" class="h2">TM241CE24T</text>
+  <text x="282" y="398" text-anchor="middle" class="txt">PNP-выход Qx</text>
+  <text x="282" y="430" text-anchor="middle" class="small">при ON выдаёт +24 V</text>
+
+  <path d="M205 250 V315" class="plus"/>
+  <path d="M440 388 H505" class="plus"/>
+  <circle cx="505" cy="388" r="7" class="node"/>
+  <text x="475" y="373" class="small">Qx</text>
+
+  <rect x="500" y="315" width="120" height="215" class="box"/>
+  <text x="560" y="350" text-anchor="middle" class="h2">K1</text>
+  <path d="M525 390 C525 365 595 365 595 390 C595 415 525 415 525 440 C525 465 595 465 595 440" class="wire"/>
+  <text x="560" y="490" text-anchor="middle" class="small">катушка</text>
+  <text x="488" y="385" text-anchor="end" class="small">A1</text>
+  <text x="488" y="515" text-anchor="end" class="small">A2</text>
+  <path d="M505 388 H525" class="plus"/>
+  <path d="M560 530 V760" class="zero"/>
+
+  <text x="90" y="805" class="txt" fill="#1570ef">0 V CENTRAL</text>
+  <path d="M90 825 H570" class="zero"/>
+
+  <text x="355" y="865" text-anchor="middle" class="small">Выход ПЛК питает только катушку K1</text>
+
+  <rect x="935" y="125" width="620" height="770" class="zone2"/>
+  <text x="1245" y="170" text-anchor="middle" class="h2">МЕСТНЫЙ ШКАФ РАСКАТА</text>
+
+  <text x="980" y="230" class="txt" fill="#d92d20">+24 V LOCAL</text>
+  <path d="M980 250 H1470" class="plus"/>
+
+  <path d="M1035 250 V330" class="plus"/>
+  <path d="M1035 330 H1110" class="wire"/>
+  <path d="M1110 330 L1185 300" class="wire"/>
+  <circle cx="1110" cy="330" r="7" class="node"/>
+  <circle cx="1205" cy="330" r="7" class="node"/>
+  <path d="M1205 330 H1410" class="wire"/>
+  <text x="1160" y="278" text-anchor="middle" class="small">существующая кнопка Splice</text>
+
+  <path d="M1035 250 V465" class="plus"/>
+  <path d="M1035 465 H1110" class="wire"/>
+  <path d="M1110 465 L1185 435" class="wire"/>
+  <circle cx="1110" cy="465" r="7" class="node"/>
+  <circle cx="1205" cy="465" r="7" class="node"/>
+  <path d="M1205 465 H1410 V330" class="wire"/>
+  <text x="1160" y="413" text-anchor="middle" class="small">контакт K1: 11–14, NO</text>
+
+  <circle cx="1410" cy="330" r="8" class="node"/>
+  <text x="1400" y="305" text-anchor="end" class="small">узел Splice_IN</text>
+
+  <path d="M1410 330 V540 H1350" class="wire"/>
+  <rect x="1080" y="500" width="270" height="125" class="box"/>
+  <text x="1215" y="542" text-anchor="middle" class="h2">Inovance GL10</text>
+  <text x="1215" y="578" text-anchor="middle" class="txt">дискретный вход DI</text>
+  <text x="1215" y="607" text-anchor="middle" class="small">I ≈ 5,3 мА</text>
+  <path d="M1215 625 V800" class="zero"/>
+
+  <path d="M1410 330 V535" class="wire"/>
+  <rect x="1370" y="535" width="80" height="175" fill="#fff7ed" stroke="#f79009" stroke-width="4" rx="12"/>
+  <path d="M1410 555 l-25 18 50 24 -50 24 50 24 -25 18" class="wire"/>
+  <text x="1410" y="744" text-anchor="middle" class="h2">R1</text>
+  <text x="1410" y="772" text-anchor="middle" class="small">3,3 кОм</text>
+  <text x="1410" y="795" text-anchor="middle" class="small">1 Вт</text>
+  <path d="M1410 710 V800" class="zero"/>
+
+  <text x="980" y="805" class="txt" fill="#1570ef">0 V LOCAL / COM входов</text>
+  <path d="M980 825 H1470" class="zero"/>
+
+  <text x="1245" y="860" text-anchor="middle" class="small">Через контакт K1: 5,3 мА + 7,3 мА ≈ 12,6 мА</text>
+
+  <path d="M620 420 C760 420 840 420 1110 465" class="mech"/>
+  <text x="800" y="398" text-anchor="middle" class="small">только механическая связь</text>
+  <text x="800" y="432" text-anchor="middle" class="small">электрического соединения нет</text>
+
+  <rect x="250" y="920" width="1100" height="55" fill="#fff1f0" stroke="#f04438" stroke-width="3" rx="14"/>
+  <text x="800" y="955" text-anchor="middle" class="note">R1 подключается ПАРАЛЛЕЛЬНО входу GL10, не последовательно!</text>
+</svg>

@@ -1,0 +1,51 @@
+macro_definition_begin
+    "id": "4"
+    "name": "macro_BTN_STOP"
+    "startup": "false"
+    "periodic": [ "false" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+short Command=1, Sequence=0, Ack=0, Param=0, Retry=0
+short Passw1_ok=0, Null=0
+
+GetData(Passw1_ok, "Local HMI", LW, 20, 1)
+
+GetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2330, 1)
+Sequence=Sequence+1
+if (Sequence==0) then
+  Sequence=1
+end if
+SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2362, 1)
+SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2363, 1)
+SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2364, 1)
+SetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2361, 1)
+SetData(Command, "Schneider MODBUS TCP/IP", %MW, 2360, 1)
+
+if (Passw1_ok>0) then
+  for Retry=0 to 20
+    GetData(Ack, "Schneider MODBUS TCP/IP", %MW, 2330, 1)
+    if (Ack==Sequence) then
+      break
+    end if
+  next Retry
+
+  if (Ack==Sequence) then
+    Sequence=Sequence+1
+    if (Sequence==0) then
+      Sequence=1
+    end if
+    Command=12
+    SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2362, 1)
+    SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2363, 1)
+    SetData(Param, "Schneider MODBUS TCP/IP", %MW, 2364, 1)
+    SetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2361, 1)
+    SetData(Command, "Schneider MODBUS TCP/IP", %MW, 2360, 1)
+  end if
+
+  SetData(Null, "Local HMI", LW, 20, 1)
+  SetData(Null, "Local HMI", LB, 2, 1)
+  short LOGOutCom=3
+  SetDataEx(LOGOutCom, "Local HMI", "Команда UAC", 1)
+end if
+end macro_command

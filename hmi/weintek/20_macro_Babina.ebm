@@ -1,0 +1,11 @@
+macro_definition_begin
+    "id": "20"
+    "name": "macro_Babina"
+    "startup": "false"
+    "periodic": [ "false" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+// Команда обрыва отправляется только макросом Confirm,
+// когда оператор выбрал Roll, сторону и причину.
+end macro_command

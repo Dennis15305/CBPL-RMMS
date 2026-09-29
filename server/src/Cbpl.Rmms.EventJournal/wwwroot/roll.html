@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>История раската — ЛГК</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: #25333a; font-family: "Microsoft YaHei", Arial, sans-serif; }
+    main { padding: 7px 8px; }
+    .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 12px; }
+    .caption { font-size: 17px; color: #607176; }
+    button { border: 0; border-radius: 8px; background: #e3f2ef; color: #24343a; font: inherit; font-size: 17px; padding: 8px 14px; min-width: 112px; cursor: pointer; }
+    button:hover:not(:disabled) { background: #cfe8e2; }
+    button:disabled { opacity: .42; cursor: default; }
+    .card { border: 1px solid #a5b5b2; border-radius: 3px; overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th { background: #edf7f5; color: #25333a; height: 45px; font-size: 19px; font-weight: 500; }
+    td { height: 42px; border-top: 1px solid #aebfbc; text-align: center; font-size: 19px; }
+    th + th, td + td { border-left: 1px solid #aebfbc; }
+    .time { width: 23%; }.length { width: 20%; }.type { width: 22%; }
+    .shift { width: 15%; }.id { width: 20%; }
+    .footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 9px; }
+    .controls { display: flex; align-items: center; gap: 9px; }
+    #status { color: #607176; font-size: 15px; min-height: 1.3em; }
+    #status.error { color: #ad3b32; }
+    #page { min-width: 105px; text-align: center; font-size: 16px; }
+    @media (max-width: 720px) {
+      th, td { font-size: 15px; }
+      .caption { font-size: 14px; }
+      button { font-size: 14px; min-width: 86px; padding: 7px 8px; }
+      .footer { flex-wrap: wrap; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div class="caption" id="caption">История текущей смены</div>
+    <button id="refresh" type="button">Обновить</button>
+  </div>
+  <div class="card">
+    <table aria-label="История выбранного раската за текущую смену">
+      <thead><tr>
+        <th class="time">Время</th><th class="length">Длина, м</th>
+        <th class="type">Событие</th><th class="shift">Смена</th><th class="id">ID</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="footer">
+    <div id="status" role="status" aria-live="polite"></div>
+    <div class="controls">
+      <button id="previous" type="button">◀ Назад</button>
+      <span id="page">Страница 1</span>
+      <button id="next" type="button">Вперёд ▶</button>
+    </div>
+  </div>
+</main>
+<script>
+(function () {
+  var pageSize = 6;
+  var query = window.location.search.substring(1);
+  var rollMatch = /(?:^|&)roll=([1-5])(?:&|$)/.exec(query);
+  var roll = rollMatch ? Number(rollMatch[1]) : null;
+  var caption = document.getElementById('caption');
+  var rows = document.getElementById('rows');
+  var status = document.getElementById('status');
+  var refresh = document.getElementById('refresh');
+  var previous = document.getElementById('previous');
+  var next = document.getElementById('next');
+  var pageLabel = document.getElementById('page');
+  var cursors = [null];
+  var pageIndex = 0;
+  var current = null;
+  var busy = false;
+
+  caption.textContent = roll ? 'Раскат ' + roll + ' · события текущей смены' :
+    'Не указан номер раската';
+
+  function eventName(code) {
+    if (code === 1) return 'Склейка';
+    if (code === 2) return 'Сброс';
+    return 'Событие ' + code;
+  }
+
+  function updateButtons() {
+    refresh.disabled = busy || !roll;
+    previous.disabled = busy || pageIndex === 0 || !roll;
+    next.disabled = busy || !current || !current.hasMore || !roll;
+  }
+
+  function display(data) {
+    while (rows.firstChild) rows.removeChild(rows.firstChild);
+    for (var index = 0; index < pageSize; index++) {
+      var item = data.items[index];
+      var values = item ? [
+        item.eventTime.substring(0, 16), Number(item.length).toFixed(1),
+        eventName(item.eventType), item.shiftNumber, item.id
+      ] : ['', '', '', '', ''];
+      var tr = document.createElement('tr');
+      for (var column = 0; column < values.length; column++) {
+        var td = document.createElement('td');
+        td.textContent = String(values[column]);
+        tr.appendChild(td);
+      }
+      rows.appendChild(tr);
+    }
+    pageLabel.textContent = 'Страница ' + (pageIndex + 1);
+    status.textContent = data.items.length ? '' : 'За текущую смену событий нет';
+    status.className = '';
+    updateButtons();
+  }
+
+  function load(index, reset, silent) {
+    if (busy || !roll) return;
+    var cursor = reset ? null : cursors[index];
+    if (index > 0 && !cursor) return;
+    busy = true;
+    if (!silent) {
+      status.textContent = 'Загрузка…';
+      status.className = '';
+    }
+    updateButtons();
+
+    var url = '/api/roll-events/' + roll +
+      (cursor === null ? '' : '?beforeId=' + encodeURIComponent(cursor));
+    var request = new XMLHttpRequest();
+    var done = false;
+    function failed() {
+      if (done) return;
+      done = true;
+      busy = false;
+      status.textContent = 'Не удалось получить историю. Проверьте соединение и нажмите «Обновить».';
+      status.className = 'error';
+      updateButtons();
+    }
+    request.onreadystatechange = function () {
+      if (request.readyState !== 4 || done) return;
+      if (request.status !== 200) { failed(); return; }
+      try {
+        var data = JSON.parse(request.responseText);
+        if (!data.items || Object.prototype.toString.call(data.items) !== '[object Array]' ||
+            typeof data.hasMore !== 'boolean') throw new Error('Invalid data');
+        if (reset) cursors.length = 1;
+        pageIndex = index;
+        current = data;
+        if (data.hasMore && data.nextBeforeId)
+          cursors[index + 1] = data.nextBeforeId;
+        cursors.length = index + (data.hasMore ? 2 : 1);
+        done = true;
+        busy = false;
+        display(data);
+      } catch (error) { failed(); }
+    };
+    request.onerror = failed;
+    request.ontimeout = failed;
+    request.timeout = 12000;
+    request.open('GET', url, true);
+    request.setRequestHeader('Cache-Control', 'no-cache');
+    request.send();
+  }
+
+  refresh.onclick = function () { load(0, true); };
+  previous.onclick = function () { if (pageIndex > 0) load(pageIndex - 1, false); };
+  next.onclick = function () { if (current && current.hasMore) load(pageIndex + 1, false); };
+  if (roll) load(0, false);
+  else { status.textContent = 'Допустимые значения: roll=1…5'; updateButtons(); }
+
+  window.setInterval(function () {
+    if (roll && pageIndex === 0 && !busy && document.hidden !== true)
+      load(0, true, true);
+  }, 60000);
+})();
+</script>
+</body>
+</html>

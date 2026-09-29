@@ -1,0 +1,68 @@
+macro_definition_begin
+    "id": "1"
+    "name": "macro_GetDateTime"
+    "startup": "false"
+    "periodic": [ "true", "10" ]
+    "interlock": [ "false" ]
+macro_definition_end
+
+macro_command main()
+
+unsigned short r[6]={0,0,0,0,0,0}
+char DateTime[19]=""
+char str[5]=""
+
+//short test
+FILL(r[0], 0, 6)
+FILL(str[0], '', 5)
+FILL(DateTime[0], '', 19)
+ 
+GetData(r[0], "Schneider MODBUS TCP/IP", %MW, 2205, 3)
+GetData(r[3], "Schneider MODBUS TCP/IP", %MW, 2307, 3)
+
+StringBin2DecAsc(r[2],str[0])
+StringCat(str[0],DateTime[0])
+StringCat("-",DateTime[0])
+
+StringBin2DecAsc(r[1],str[0])
+if (r[1]<10) then
+  StringCat("0",DateTime[0])
+end if
+StringCat(str[0],DateTime[0])
+StringCat("-",DateTime[0])
+
+StringBin2DecAsc(r[0],str[0])
+if (r[0]<10) then
+  StringCat("0",DateTime[0])
+end if
+StringCat(str[0],DateTime[0])
+StringCat(" ",DateTime[0])
+
+StringBin2DecAsc(r[3],str[0])
+if (r[3]<10) then
+  StringCat("0",DateTime[0])
+end if
+StringCat(str[0],DateTime[0])
+StringCat(":",DateTime[0])
+
+StringBin2DecAsc(r[4],str[0])
+if (r[4]<10) then
+  StringCat("0",DateTime[0])
+end if
+StringCat(str[0],DateTime[0])
+StringCat(":",DateTime[0])
+
+StringBin2DecAsc(r[5],str[0])
+if (r[5]<10) then
+  StringCat("0",DateTime[0])
+end if
+StringCat(str[0],DateTime[0])
+//StringCat("    ",DateTime[0])
+
+StringSetEx(DateTime[0], "Local HMI", LW, 0, 19)
+
+//GetData(test, "Schneider MODBUS TCP/IP", 4x, 55, 1)
+//test=test+1
+//SetData(test, "Schneider MODBUS TCP/IP", 4x, 55, 1)
+
+end macro_command

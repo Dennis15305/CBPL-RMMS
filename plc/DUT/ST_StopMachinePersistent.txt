@@ -1,0 +1,18 @@
+TYPE ST_StopMachinePersistent :
+STRUCT
+    wConfigSignature                 : WORD;  // Сигнатура инициализированных постоянных настроек.
+    udiOrderNumber                   : UDINT; // Номер заказа, показываемый оператору.
+    udiOrderDatabaseId               : UDINT; // NumZ: ключ записи заказа в БД.
+    udiOrderTechnicalCard            : UDINT; // NumTK: номер технологической карты.
+    uiOrderSourceShift               : UINT;  // NumSM, полученный с сервера.
+    uiOrderNominalSpeed              : UINT;  // Efficiency из записи заказа.
+    uiOperatorNumber                 : UINT;  // Номер авторизованного оператора будущей EB-панели.
+    wLastServerOrderSequence         : WORD;  // Последний атомарно применённый пакет сервера.
+    uliOrderBaselineMm               : ULINT; // Общий метраж линии в момент начала заказа.
+    uliShiftBaselineMm               : ULINT; // Общий метраж линии в момент начала смены.
+    uiAreaCoefficientX100            : UINT;  // Площадь на метр, м2/м x 100 (210 = 2,10).
+    uiStartDetectLengthDm            : UINT;  // Путь подтверждения работы, 0,1 м.
+    uiChangeoverSetpointTenthsMin    : UINT;  // Допустимая переналадка, 0,1 мин.
+    usiLastShiftNumber               : USINT; // Последняя смена для восстановления после отключения.
+END_STRUCT
+END_TYPE

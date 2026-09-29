@@ -1,0 +1,23 @@
+// Рекомендуемый способ создания:
+// Application -> Add Object -> POU for implicit checks -> Bound Checks.
+// Machine Expert создаст эту функцию автоматически.
+
+// ==================== DECLARATION ====================
+
+FUNCTION CheckBounds : DINT
+VAR_INPUT
+    index : DINT; // Запрошенный индекс массива.
+    lower : DINT; // Нижняя допустимая граница массива.
+    upper : DINT; // Верхняя допустимая граница массива.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+IF index < lower THEN
+    CheckBounds := lower;
+ELSIF index > upper THEN
+    CheckBounds := upper;
+ELSE
+    CheckBounds := index;
+END_IF;

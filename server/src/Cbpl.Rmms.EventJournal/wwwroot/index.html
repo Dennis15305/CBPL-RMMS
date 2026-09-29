@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Журнал событий — ЛГК</title>
+  <style>
+    :root { font-family: "Microsoft YaHei", Arial, sans-serif; color: #25333a; background: #f4faf9; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { padding: 12px 18px; max-width: 1280px; min-height: 100vh; margin: auto; }
+    .top { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-bottom: 10px; }
+    h1 { font-size: 28px; line-height: 1.15; margin: 0; font-weight: 700; }
+    .card { background: #fff; border: 1px solid #d4e2e0; border-radius: 12px; overflow: hidden; }
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    th { background: #e8f4f2; color: #25333a; font-size: 18px; font-weight: 600; height: 48px; }
+    td { border-top: 1px solid #d6e1df; font-size: 19px; height: 49px; text-align: center; }
+    th + th, td + td { border-left: 1px solid #d6e1df; }
+    tbody tr:nth-child(even) { background: #fbfdfd; }
+    .time { width: 25%; }.roll { width: 12%; }.length { width: 17%; }
+    .type { width: 20%; }.shift { width: 12%; }.id { width: 14%; }
+    .empty { color: #7e9191; }
+    .footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 10px; }
+    .controls { display: flex; align-items: center; gap: 10px; }
+    button { border: 0; border-radius: 8px; background: #e3f2ef; color: #24343a; font: inherit; font-size: 18px; padding: 9px 16px; min-width: 120px; cursor: pointer; }
+    button:hover:not(:disabled) { background: #cfe8e2; }
+    button:focus-visible { outline: 3px solid #286f62; outline-offset: 2px; }
+    button:disabled { opacity: .42; cursor: default; }
+    #status { color: #607176; font-size: 17px; min-height: 1.4em; }
+    #status.error { color: #ad3b32; }
+    #page { font-size: 18px; min-width: 118px; text-align: center; }
+    @media (max-width: 760px) {
+      main { padding: 12px; }
+      h1 { font-size: 24px; }
+      th { font-size: 14px; height: 44px; }
+      td { font-size: 14px; height: 48px; }
+      .footer { flex-wrap: wrap; }
+      button { font-size: 16px; min-width: 88px; padding: 10px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>Журнал событий</h1>
+    </div>
+    <button id="refresh" type="button">Обновить</button>
+  </div>
+  <div class="card">
+    <table aria-label="Общие события линии">
+      <thead><tr>
+        <th class="time">Время</th><th class="roll">Раскат</th>
+        <th class="length">Длина, м</th><th class="type">Событие</th>
+        <th class="shift">Смена</th><th class="id">ID</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div class="footer">
+    <div id="status" role="status" aria-live="polite"></div>
+    <div class="controls">
+      <button id="previous" type="button">◀ Назад</button>
+      <span id="page">Страница 1</span>
+      <button id="next" type="button">Вперёд ▶</button>
+    </div>
+  </div>
+</main>
+<script>
+ (function () {
+  var pageSize = 7;
+  var rows = document.getElementById('rows');
+  var status = document.getElementById('status');
+  var refresh = document.getElementById('refresh');
+  var previous = document.getElementById('previous');
+  var next = document.getElementById('next');
+  var pageLabel = document.getElementById('page');
+  var cursors = [null];
+  var pageIndex = 0;
+  var current = null;
+  var busy = false;
+
+  function eventName(code) {
+    if (code === 1) return 'Склейка';
+    if (code === 2) return 'Сброс';
+    return 'Событие ' + code;
+  }
+
+  function updateButtons() {
+    previous.disabled = busy || pageIndex === 0;
+    next.disabled = busy || !current || !current.hasMore;
+    refresh.disabled = busy;
+  }
+
+  function display(data) {
+    while (rows.firstChild) rows.removeChild(rows.firstChild);
+    for (var index = 0; index < pageSize; index++) {
+      var item = data.items[index];
+      var values = item ? [
+        item.eventTime, item.rollNumber,
+        Number(item.length).toFixed(1), eventName(item.eventType),
+        item.shiftNumber, item.id
+      ] : ['', '', '', '', '', ''];
+      var tr = document.createElement('tr');
+      if (!item) tr.className = 'empty';
+      for (var column = 0; column < values.length; column++) {
+        var td = document.createElement('td');
+        td.textContent = String(values[column]);
+        tr.appendChild(td);
+      }
+      rows.appendChild(tr);
+    }
+    pageLabel.textContent = 'Страница ' + (pageIndex + 1);
+    status.textContent = data.items.length ? '' : 'Событий пока нет';
+    status.className = '';
+    updateButtons();
+  }
+
+  function load(index, reset) {
+    if (busy) return;
+    var cursor = reset ? null : cursors[index];
+    if (index > 0 && !cursor) return;
+    busy = true;
+    status.textContent = 'Загрузка…';
+    status.className = '';
+    updateButtons();
+
+    var url = cursor === null ? '/api/events' :
+      '/api/events?beforeId=' + encodeURIComponent(cursor);
+    var request = new XMLHttpRequest();
+    var done = false;
+    function failed() {
+      if (done) return;
+      done = true;
+      busy = false;
+      status.textContent = 'Не удалось получить события. Проверьте соединение и нажмите «Обновить».';
+      status.className = 'error';
+      updateButtons();
+    }
+    request.onreadystatechange = function () {
+      if (request.readyState !== 4 || done) return;
+      if (request.status !== 200) { failed(); return; }
+      try {
+        var data = JSON.parse(request.responseText);
+        if (!data.items || Object.prototype.toString.call(data.items) !== '[object Array]' ||
+            typeof data.hasMore !== 'boolean') throw new Error('Invalid data');
+        if (reset) cursors.length = 1;
+        pageIndex = index;
+        current = data;
+        if (data.hasMore && data.nextBeforeId)
+          cursors[index + 1] = data.nextBeforeId;
+        cursors.length = index + (data.hasMore ? 2 : 1);
+        done = true;
+        busy = false;
+        display(data);
+      } catch (error) { failed(); }
+    };
+    request.onerror = failed;
+    request.ontimeout = failed;
+    request.timeout = 12000;
+    request.open('GET', url, true);
+    request.setRequestHeader('Cache-Control', 'no-cache');
+    request.send();
+  }
+
+  refresh.onclick = function () { load(0, true); };
+  previous.onclick = function () { if (pageIndex > 0) load(pageIndex - 1, false); };
+  next.onclick = function () { if (current && current.hasMore) load(pageIndex + 1, false); };
+  load(0, false);
+})();
+</script>
+</body>
+</html>

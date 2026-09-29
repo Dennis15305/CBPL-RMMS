@@ -1,0 +1,70 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_DwinDataPacker
+VAR_INPUT
+    i_uliCurrentLengthMm  : ULINT; // Текущая длина рулона в миллиметрах.
+    i_uliPreviousLengthMm : ULINT; // Предыдущая длина рулона в миллиметрах.
+    i_usiUnwindNumber     : USINT; // Постоянный физический номер раската 1...5.
+END_VAR
+
+VAR_OUTPUT
+    q_wCurrentHigh  : WORD; // VP 2000: старшее слово текущей длины.
+    q_wCurrentLow   : WORD; // VP 2001: младшее слово текущей длины.
+    q_wPreviousHigh : WORD; // VP 2002: старшее слово предыдущей длины.
+    q_wPreviousLow  : WORD; // VP 2003: младшее слово предыдущей длины.
+    q_wUnwindNumber : WORD; // VP 2004: постоянный физический номер раската.
+    q_xOverflow     : BOOL; // Одно из значений превысило диапазон 32-битного DWIN.
+END_VAR
+
+VAR
+    uliCurrentX10  : ULINT; // Текущая длина в десятых долях метра.
+    uliPreviousX10 : ULINT; // Предыдущая длина в десятых долях метра.
+    udiCurrentX10  : UDINT; // Ограниченное 32-битное значение текущей длины.
+    udiPreviousX10 : UDINT; // Ограниченное 32-битное значение предыдущей длины.
+END_VAR
+
+VAR CONSTANT
+    c_uliDwinMaxValue : ULINT := ULINT#4294967295; // Максимум Unsigned Long Int DWIN.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+// 100 мм соответствуют 0.1 м на экране DWIN.
+uliCurrentX10 := i_uliCurrentLengthMm / ULINT#100;
+uliPreviousX10 := i_uliPreviousLengthMm / ULINT#100;
+IF (i_uliPreviousLengthMm MOD ULINT#100) >= ULINT#50 THEN
+    uliPreviousX10 := uliPreviousX10 + ULINT#1;
+END_IF;
+q_xOverflow := FALSE;
+
+
+IF uliCurrentX10 > c_uliDwinMaxValue THEN
+    udiCurrentX10 := UDINT#4294967295;
+    q_xOverflow := TRUE;
+ELSE
+    udiCurrentX10 := ULINT_TO_UDINT(uliCurrentX10);
+END_IF;
+
+
+IF uliPreviousX10 > c_uliDwinMaxValue THEN
+    udiPreviousX10 := UDINT#4294967295;
+    q_xOverflow := TRUE;
+ELSE
+    udiPreviousX10 := ULINT_TO_UDINT(uliPreviousX10);
+END_IF;
+
+
+q_wCurrentHigh :=
+    UDINT_TO_WORD(udiCurrentX10 / UDINT#65536);
+
+q_wCurrentLow :=
+    UDINT_TO_WORD(udiCurrentX10 MOD UDINT#65536);
+
+q_wPreviousHigh :=
+    UDINT_TO_WORD(udiPreviousX10 / UDINT#65536);
+
+q_wPreviousLow :=
+    UDINT_TO_WORD(udiPreviousX10 MOD UDINT#65536);
+
+q_wUnwindNumber := USINT_TO_WORD(i_usiUnwindNumber);

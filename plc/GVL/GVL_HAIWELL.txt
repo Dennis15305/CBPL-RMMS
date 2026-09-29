@@ -1,0 +1,41 @@
+VAR_GLOBAL
+    // Непрерывная read-only область Modbus TCP для центральной Haiwell A10-W.
+    // Многословные значения передаются в порядке: старшее WORD, затем младшее WORD.
+
+    wHmiSignature       AT %MW2100 : WORD; // 16#484D ('HM').
+    wHmiProtocolVersion AT %MW2101 : WORD; // Версия карты.
+    wPlcHeartbeat       AT %MW2102 : WORD; // Изменяется раз в секунду.
+    wSystemStatusBits   AT %MW2103 : WORD; // Общие диагностические флаги.
+    wCurrentShift       AT %MW2104 : WORD; // 1, 2 или 0 при недостоверном RTC.
+    wLocalHour          AT %MW2105 : WORD; // 0...23.
+    wLocalMinute        AT %MW2106 : WORD; // 0...59.
+    wEventQueueCount    AT %MW2107 : WORD;
+    wEventQueueStatus   AT %MW2108 : WORD;
+    wLastAckResult      AT %MW2109 : WORD;
+
+    a_wCurrentLengthX10  AT %MW2110 : ARRAY[1..5, 0..1] OF WORD;
+    a_wPreviousLengthX10 AT %MW2120 : ARRAY[1..5, 0..1] OF WORD;
+    a_wUnwindStatus      AT %MW2130 : ARRAY[1..5] OF WORD;
+    a_wLastEndReason     AT %MW2135 : ARRAY[1..5] OF WORD;
+
+    a_wOutputTotalLengthX10 AT %MW2140 : ARRAY[0..1] OF WORD;
+    wOutputSpeedX10         AT %MW2142 : WORD;
+    wOutputStatus           AT %MW2143 : WORD;
+    a_wDiscardedLengthX10   AT %MW2144 : ARRAY[1..5, 0..1] OF WORD;
+    a_wQueueOverflowCount   AT %MW2154 : ARRAY[0..1] OF WORD;
+    wCollectorHeartbeat     AT %MW2156 : WORD;
+    wReserved2157           AT %MW2157 : WORD;
+
+    // Состояния, дата и накопители текущей смены.
+    a_wUnwindDisplayState       AT %MW2200 : ARRAY[1..5] OF WORD;    // 0 — стоит, 1 — работает, 2 — жёлтая фаза SPLICE/RESET.
+    wLocalYear                  AT %MW2205 : WORD;
+    wLocalMonth                 AT %MW2206 : WORD;
+    wLocalDay                   AT %MW2207 : WORD;
+    a_wReserved2208             AT %MW2208 : ARRAY[0..1] OF WORD;
+    a_wShiftOutputLengthX10     AT %MW2210 : ARRAY[0..1] OF WORD;
+    wShiftAverageSpeedX10       AT %MW2212 : WORD;
+    wShiftStatus                AT %MW2213 : WORD;                   // bit 0 — накопители достоверны.
+    a_wShiftRollLengthX10       AT %MW2214 : ARRAY[1..5, 0..1] OF WORD;
+    a_wShiftRawTotalLengthX10   AT %MW2224 : ARRAY[0..1] OF WORD;
+    a_wReserved2226             AT %MW2226 : ARRAY[0..3] OF WORD;
+END_VAR

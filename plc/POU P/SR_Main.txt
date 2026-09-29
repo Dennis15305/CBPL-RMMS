@@ -1,0 +1,1304 @@
+// ==================== DECLARATION ====================
+
+PROGRAM SR_Main
+VAR
+    xHscFirstCycle : BOOL := TRUE;                     // Первый цикл: синхронно сбрасывает и запускает шесть HSC.
+    a_dwHscRaw     : ARRAY[1..6] OF DWORD;             // Сырые выходы CurrentValue аппаратных HSC.
+    iHsc           : INT;                              // Индекс обработки шести HSC.
+    iRoll          : INT;                              // Индекс обработки пяти раскатов.
+    iDwinWord      : INT;                              // Индекс копирования общей части пакета DWIN.
+
+    a_fbHscTracker     : ARRAY[1..6] OF FB_HscTracker;     // Трекеры приращений шести HSC.
+    a_fbSpliceFilter   : ARRAY[1..5] OF FB_InputFilter;    // Фильтры кнопок SPLICE.
+    a_fbResetFilter    : ARRAY[1..5] OF FB_InputFilter;    // Фильтры кнопок RESET.
+    a_fbRollCounter    : ARRAY[1..5] OF FB_RollCounter;    // Счётчики текущего и предыдущего рулона.
+    a_fbDwinDataPacker : ARRAY[1..5] OF FB_DwinDataPacker; // Упаковщики значений для пяти DWIN.
+    fbLineMeter        : FB_LineMeter;                     // Скорость и общий метраж шестого энкодера.
+    fbShiftManager     : FB_ShiftManager;                  // Определение текущей смены по RTC.
+    fbStopMachine      : FB_StopMachine;                   // Изолированная логика Стопмашины линии ЛГК.
+    fbStopJournalQueue : FB_StopJournalQueue;              // Независимая постоянная очередь смены состояний ЛГК.
+    xStopJournalFirstCycle : BOOL := TRUE;
+    a_xStopJournalEnqueue : ARRAY[1..2] OF BOOL;
+    a_stStopJournalEnqueue : ARRAY[1..2] OF ST_StopJournalEvent;
+    stStopBeforeUpdate : ST_StopMachineState;
+    stStopEvent : ST_StopJournalEvent;
+    stEmptyStopJournalEvent : ST_StopJournalEvent;
+    wStopPreviousState : WORD;
+    wStopPreviousShift : WORD;
+    udiStopPreviousOrderDbId : UDINT;
+    udiStopAckEventId : UDINT;
+    iStopJournalPersistentIndex : INT;
+    fbInterfaceHeartbeat : TON;                           // Секундный heartbeat интерфейсов HMI.
+    a_fbHaiwellActivityTimeout : ARRAY[1..5] OF TON;       // Удержание признака движения между опросами Haiwell.
+    a_fbHaiwellResetTimeout    : ARRAY[1..5] OF TON;       // Удержание индикации RESET на Haiwell.
+    a_fbHaiwellAttentionFlash  : ARRAY[1..5] OF FB_ThreeFlash; // Три жёлтые вспышки после SPLICE или RESET.
+    a_xHaiwellActivitySeen     : ARRAY[1..5] OF BOOL;      // На канале недавно были импульсы.
+    a_xHaiwellResetSeen        : ARRAY[1..5] OF BOOL;      // На канале недавно был RESET.
+
+    a_xRollEventRequest  : ARRAY[1..5] OF BOOL;         // Одноцикловые запросы записи завершённых рулонов.
+    a_stRollEventRequest : ARRAY[1..5] OF ST_RollEvent; // Данные событий от пяти раскатов до помещения в очередь.
+    fbRollEventQueue     : FB_RollEventQueue;            // Постоянная FIFO-очередь событий для службы-сборщика.
+    fbEventPacker        : FB_EventPacker;               // Упаковка первого события очереди в 16 Modbus-регистров.
+    udiAckEventId        : UDINT;                        // EventId, собранный из двух слов подтверждения сервера.
+    iPacketWord          : INT;                          // Индекс копирования 12 слов пакета v2 в GVL_SCADA.
+    udiServerOrderDatabaseId    : UDINT;                 // Пакет заказа сервера, собранный из Modbus-слов.
+    udiServerOrderTechnicalCard : UDINT;
+    udiServerOrderNumber        : UDINT;
+
+    fbCollectorTimeout          : TON;                   // Таймер отсутствия heartbeat службы-сборщика.
+    wCollectorHeartbeatPrevious : WORD;                  // Предыдущее значение heartbeat службы-сборщика.
+    xCollectorHeartbeatChanged  : BOOL;                  // Одноцикловый признак изменения heartbeat.
+    xCollectorHeartbeatSeen     : BOOL;                  // Служба хотя бы один раз изменила heartbeat.
+    xCollectorConnected         : BOOL;                  // Heartbeat менялся в течение последних пяти секунд.
+    uliHaiwellValueX10          : ULINT;                 // Промежуточное значение длины в 0,1 м.
+    udiHaiwellValueX10          : UDINT;                 // Ограниченное 32-битное значение для Modbus.
+    uiHaiwellSpeedX10           : UINT;                  // Скорость в 0,1 м/мин.
+    uliShiftLengthMm            : ULINT;                 // Промежуточная длина текущей смены, мм.
+    uliShiftRawTotalMm          : ULINT;                 // Суммарный расход пяти раскатов за смену, мм.
+    udiShiftElapsedSeconds      : UDINT;                 // Прошедшее время текущего сменного интервала.
+    rShiftAverageSpeedMPerMin   : REAL;                  // Средняя скорость выпуска с начала сменного интервала.
+    xRollPulseThisCycle         : BOOL;                  // За цикл получены достоверные импульсы раската.
+    xRollResetThisCycle         : BOOL;                  // За цикл выполнен короткий или учтённый RESET.
+    xShiftIntervalExpired       : BOOL;                  // Накопители относятся к прошлому 12-часовому интервалу.
+    iPersistentEvent            : INT;                   // Индекс очистки постоянной очереди после смены разметки.
+    iPersistentRoll             : INT;                   // Индекс очистки постоянного состояния раскатов.
+    stEmptyRollEvent            : ST_RollEvent;          // Нулевой шаблон события для безопасной инициализации.
+    stEmptyRollState            : ST_RollState;          // Нулевой шаблон состояния раската.
+    stEmptyStopMachine          : ST_StopMachinePersistent; // Нулевой шаблон состояния Стопмашины.
+    a_wDwinCommon               : ARRAY[5..12] OF WORD;  // Общие для пяти панелей дата, время, смена и статус RTC.
+    a_wDwinRtcCommon            : ARRAY[0..3] OF WORD;   // Команда синхронизации встроенных часов DWIN.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+// ============================================================
+// 0. Контроль разметки постоянной памяти
+// ============================================================
+
+// При первом запуске этой версии старая PERSISTENT-разметка может содержать
+// данные прежнего проекта в новых полях. Несовпадение сигнатуры или версии
+// очищает только данные приложения, после чего признак сохраняется.
+IF (PersistentVars.dwLayoutSignature <> GVL_Constants.c_dwPersistentLayoutSignature)
+   OR (PersistentVars.wLayoutVersion <> GVL_Constants.c_wPersistentLayoutVersion) THEN
+
+    FOR iPersistentEvent := 0 TO 127 DO
+        PersistentVars.a_stEventQueue[iPersistentEvent] := stEmptyRollEvent;
+    END_FOR;
+
+    FOR iPersistentRoll := 1 TO GVL_Constants.c_iRollChannelCount DO
+        PersistentVars.a_stRollState[iPersistentRoll] := stEmptyRollState;
+        PersistentVars.a_uliShiftRollPulses[iPersistentRoll] := ULINT#0;
+    END_FOR;
+
+    PersistentVars.uiEventQueueHead := UINT#0;
+    PersistentVars.uiEventQueueTail := UINT#0;
+    PersistentVars.uiEventQueueCount := UINT#0;
+    PersistentVars.udiNextEventId := UDINT#1;
+    PersistentVars.udiQueueOverflowCount := UDINT#0;
+    PersistentVars.stStopMachine := stEmptyStopMachine;
+    PersistentVars.usiShiftAccumulatorNumber := USINT#0;
+    PersistentVars.udiShiftStartTimestampUtc := UDINT#0;
+    PersistentVars.uliShiftOutputPulses := ULINT#0;
+    PersistentVars.dwLayoutSignature := GVL_Constants.c_dwPersistentLayoutSignature;
+    PersistentVars.wLayoutVersion := GVL_Constants.c_wPersistentLayoutVersion;
+
+END_IF;
+
+// Новый журнал имеет собственную persistent-разметку и не сбрасывает
+// существующие счётчики рулонов при первом импорте.
+IF PersistentVars.stStopJournal.dwSignature <> DWORD#16#534A4C34 THEN
+    FOR iStopJournalPersistentIndex := 0 TO 127 DO
+        PersistentVars.stStopJournal.a_stQueue[iStopJournalPersistentIndex] := stEmptyStopJournalEvent;
+    END_FOR;
+    PersistentVars.stStopJournal.uiHead := UINT#0;
+    PersistentVars.stStopJournal.uiTail := UINT#0;
+    PersistentVars.stStopJournal.uiCount := UINT#0;
+    PersistentVars.stStopJournal.udiNextEventId := UDINT#1;
+    PersistentVars.stStopJournal.udiOverflowCount := UDINT#0;
+    PersistentVars.stStopJournal.uliLinePulses := ULINT#0;
+    PersistentVars.stStopJournal.wLastState := WORD#0;
+    PersistentVars.stStopJournal.dwSignature := DWORD#16#534A4C34;
+END_IF;
+
+// ============================================================
+// 1. Вызов шести аппаратных HSC
+// ============================================================
+
+HscSimple_0(
+    Enable := TRUE,
+    Sync := xHscFirstCycle,
+    ACK_Modulo := FALSE,
+    HSC_Err => GVL_IO.xHscError[1],
+    Validity => GVL_IO.xHscValid[1],
+    CurrentValue => a_dwHscRaw[1]
+);
+
+HscSimple_1(
+    Enable := TRUE,
+    Sync := xHscFirstCycle,
+    ACK_Modulo := FALSE,
+    HSC_Err => GVL_IO.xHscError[2],
+    Validity => GVL_IO.xHscValid[2],
+    CurrentValue => a_dwHscRaw[2]
+);
+
+HscSimple_2(
+    Enable := TRUE,
+    Sync := xHscFirstCycle,
+    ACK_Modulo := FALSE,
+    HSC_Err => GVL_IO.xHscError[3],
+    Validity => GVL_IO.xHscValid[3],
+    CurrentValue => a_dwHscRaw[3]
+);
+
+HscSimple_3(
+    Enable := TRUE,
+    Sync := xHscFirstCycle,
+    ACK_Modulo := FALSE,
+    HSC_Err => GVL_IO.xHscError[4],
+    Validity => GVL_IO.xHscValid[4],
+    CurrentValue => a_dwHscRaw[4]
+);
+
+HscSimple_4(
+    Enable := TRUE,
+    Sync := xHscFirstCycle,
+    ACK_Modulo := FALSE,
+    HSC_Err => GVL_IO.xHscError[5],
+    Validity => GVL_IO.xHscValid[5],
+    CurrentValue => a_dwHscRaw[5]
+);
+
+HscSimple_5(
+    Enable := TRUE,
+    Sync := xHscFirstCycle,
+    ACK_Modulo := FALSE,
+    HSC_Err => GVL_IO.xHscError[6],
+    Validity => GVL_IO.xHscValid[6],
+    CurrentValue => a_dwHscRaw[6]
+);
+
+
+// Sync активен только при первом проходе SR_Main.
+xHscFirstCycle := FALSE;
+
+
+// ============================================================
+// 2. Обработка абсолютных значений HSC
+// ============================================================
+
+GVL_Diagnostics.stSystem.xAnyHscFault := FALSE;
+GVL_Diagnostics.stSystem.xAnyConfigFault := FALSE;
+
+
+FOR iHsc := 1 TO GVL_Constants.c_iHscChannelCount DO
+
+    GVL_IO.udiHscAbs[iHsc] :=
+        DWORD_TO_UDINT(a_dwHscRaw[iHsc]);
+
+
+    a_fbHscTracker[iHsc](
+        i_udiHscAbs := GVL_IO.udiHscAbs[iHsc],
+        i_xHscValid := GVL_IO.xHscValid[iHsc],
+        i_xHscError := GVL_IO.xHscError[iHsc],
+        i_udiCounterRange := GVL_Constants.c_udiHscCounterRange,
+        i_udiMaxDeltaPerCycle := GVL_Constants.c_udiMaxPulseDeltaPerCycle,
+        iq_stState := GVL_Runtime.a_stHscState[iHsc]
+    );
+
+
+    GVL_Diagnostics.stSystem.a_eHscStatus[iHsc] :=
+        GVL_Runtime.a_stHscState[iHsc].eStatus;
+
+    GVL_Diagnostics.stSystem.a_xHscFault[iHsc] :=
+        (GVL_Runtime.a_stHscState[iHsc].eStatus <> CHANNEL_STATUS_RUNNING)
+        AND
+        (GVL_Runtime.a_stHscState[iHsc].eStatus <> CHANNEL_STATUS_STARTING);
+
+    GVL_Diagnostics.stSystem.xAnyHscFault :=
+        GVL_Diagnostics.stSystem.xAnyHscFault
+        OR GVL_Diagnostics.stSystem.a_xHscFault[iHsc];
+
+    GVL_Diagnostics.stSystem.xAnyConfigFault :=
+        GVL_Diagnostics.stSystem.xAnyConfigFault
+        OR
+        (GVL_Runtime.a_stHscState[iHsc].eStatus = CHANNEL_STATUS_CONFIG_ERROR);
+
+END_FOR;
+
+
+// ============================================================
+// 3. Определение номера текущей смены и времени события
+// ============================================================
+
+fbShiftManager(
+    i_usiShift1StartHour := GVL_Constants.c_usiShift_1_StartHour,
+    i_usiShift2StartHour := GVL_Constants.c_usiShift_2_StartHour,
+    i_udiUtcOffsetSeconds := GVL_Constants.c_udiLocalUtcOffsetSeconds,
+    iq_stState := GVL_Runtime.stShiftState
+);
+
+
+GVL_Diagnostics.stSystem.xRtcFault :=
+    NOT GVL_Runtime.stShiftState.xRtcValid;
+
+
+// Общая часть пакета всех DWIN. Компоненты времени передаются отдельными
+// 16-битными числами, поэтому панели не зависят от порядка слов UDINT.
+a_wDwinCommon[5] := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalYear);
+a_wDwinCommon[6] := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMonth);
+a_wDwinCommon[7] := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalDay);
+a_wDwinCommon[8] := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalHour);
+a_wDwinCommon[9] := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMinute);
+a_wDwinCommon[10] := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalSecond);
+a_wDwinCommon[11] := USINT_TO_WORD(GVL_Runtime.stShiftState.usiCurrentShift);
+IF GVL_Runtime.stShiftState.xRtcValid THEN
+    a_wDwinCommon[12] := WORD#1;
+ELSE
+    a_wDwinCommon[12] := WORD#0;
+END_IF;
+
+
+// Системный RTC DWIN устанавливается записью четырёх слов с VP 009C:
+// 5AA5, YYMM, DDHH, MMSS. Год передаётся смещением от 2000.
+IF GVL_Runtime.stShiftState.xRtcValid
+   AND (GVL_Runtime.stShiftState.uiLocalYear >= UINT#2000)
+   AND (GVL_Runtime.stShiftState.uiLocalYear <= UINT#2255)
+   AND (GVL_Runtime.stShiftState.uiLocalMonth >= UINT#1)
+   AND (GVL_Runtime.stShiftState.uiLocalMonth <= UINT#12)
+   AND (GVL_Runtime.stShiftState.uiLocalDay >= UINT#1)
+   AND (GVL_Runtime.stShiftState.uiLocalDay <= UINT#31)
+   AND (GVL_Runtime.stShiftState.uiLocalHour <= UINT#23)
+   AND (GVL_Runtime.stShiftState.uiLocalMinute <= UINT#59)
+   AND (GVL_Runtime.stShiftState.uiLocalSecond <= UINT#59) THEN
+
+    a_wDwinRtcCommon[0] := WORD#16#5AA5;
+    a_wDwinRtcCommon[1] :=
+        SHL(
+            UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalYear - UINT#2000),
+            8
+        )
+        OR UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMonth);
+    a_wDwinRtcCommon[2] :=
+        SHL(UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalDay), 8)
+        OR UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalHour);
+    a_wDwinRtcCommon[3] :=
+        SHL(UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMinute), 8)
+        OR UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalSecond);
+
+ELSE
+
+    // Нулевая сигнатура запрещает установку DWIN по недостоверному времени.
+    a_wDwinRtcCommon[0] := WORD#0;
+    a_wDwinRtcCommon[1] := WORD#0;
+    a_wDwinRtcCommon[2] := WORD#0;
+    a_wDwinRtcCommon[3] := WORD#0;
+
+END_IF;
+
+
+FOR iDwinWord := 0 TO 3 DO
+    GVL_HMI.a_wHmi1RtcSync[iDwinWord] := a_wDwinRtcCommon[iDwinWord];
+    GVL_HMI.a_wHmi2RtcSync[iDwinWord] := a_wDwinRtcCommon[iDwinWord];
+    GVL_HMI.a_wHmi3RtcSync[iDwinWord] := a_wDwinRtcCommon[iDwinWord];
+    GVL_HMI.a_wHmi4RtcSync[iDwinWord] := a_wDwinRtcCommon[iDwinWord];
+    GVL_HMI.a_wHmi5RtcSync[iDwinWord] := a_wDwinRtcCommon[iDwinWord];
+END_FOR;
+
+
+// Накопители смены не зависят от сбросов отдельных рулонов. Они используют
+// те же проверенные приращения HSC и сохраняются при перезапуске ПЛК.
+IF GVL_Runtime.stShiftState.xRtcValid THEN
+
+    xShiftIntervalExpired := FALSE;
+    IF PersistentVars.udiShiftStartTimestampUtc <> UDINT#0 THEN
+        IF GVL_Runtime.stShiftState.udiTimestampUtc
+           < PersistentVars.udiShiftStartTimestampUtc THEN
+            xShiftIntervalExpired := TRUE;
+        ELSE
+            xShiftIntervalExpired :=
+                (GVL_Runtime.stShiftState.udiTimestampUtc
+                 - PersistentVars.udiShiftStartTimestampUtc)
+                >= GVL_Constants.c_udiShiftMaxIntervalSeconds;
+        END_IF;
+    END_IF;
+
+    IF (PersistentVars.usiShiftAccumulatorNumber < USINT#1)
+       OR (PersistentVars.usiShiftAccumulatorNumber > USINT#2)
+       OR (PersistentVars.usiShiftAccumulatorNumber <> GVL_Runtime.stShiftState.usiCurrentShift)
+       OR (PersistentVars.udiShiftStartTimestampUtc = UDINT#0)
+       OR xShiftIntervalExpired THEN
+
+        PersistentVars.usiShiftAccumulatorNumber :=
+            GVL_Runtime.stShiftState.usiCurrentShift;
+        PersistentVars.udiShiftStartTimestampUtc :=
+            GVL_Runtime.stShiftState.udiTimestampUtc;
+        PersistentVars.uliShiftOutputPulses := ULINT#0;
+
+        FOR iRoll := 1 TO GVL_Constants.c_iRollChannelCount DO
+            PersistentVars.a_uliShiftRollPulses[iRoll] := ULINT#0;
+        END_FOR;
+
+    END_IF;
+
+    FOR iRoll := 1 TO GVL_Constants.c_iRollChannelCount DO
+        IF GVL_Runtime.a_stHscState[iRoll].xDataValid THEN
+            IF PersistentVars.a_uliShiftRollPulses[iRoll]
+               <= (ULINT#18446744073709551615
+                   - UDINT_TO_ULINT(GVL_Runtime.a_stHscState[iRoll].udiPulseDelta)) THEN
+                PersistentVars.a_uliShiftRollPulses[iRoll] :=
+                    PersistentVars.a_uliShiftRollPulses[iRoll]
+                    + UDINT_TO_ULINT(GVL_Runtime.a_stHscState[iRoll].udiPulseDelta);
+            ELSE
+                PersistentVars.a_uliShiftRollPulses[iRoll] :=
+                    ULINT#18446744073709551615;
+                GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+            END_IF;
+        END_IF;
+    END_FOR;
+
+    IF GVL_Runtime.a_stHscState[6].xDataValid THEN
+        IF PersistentVars.uliShiftOutputPulses
+           <= (ULINT#18446744073709551615
+               - UDINT_TO_ULINT(GVL_Runtime.a_stHscState[6].udiPulseDelta)) THEN
+            PersistentVars.uliShiftOutputPulses :=
+                PersistentVars.uliShiftOutputPulses
+                + UDINT_TO_ULINT(GVL_Runtime.a_stHscState[6].udiPulseDelta);
+        ELSE
+            PersistentVars.uliShiftOutputPulses := ULINT#18446744073709551615;
+            GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+        END_IF;
+    END_IF;
+
+END_IF;
+
+
+// ============================================================
+// 4. Фильтрация кнопок и учёт пяти раскатов
+// ============================================================
+
+FOR iRoll := 1 TO GVL_Constants.c_iRollChannelCount DO
+
+    a_fbSpliceFilter[iRoll](
+        i_xRaw := GVL_IO.xSplice[iRoll],
+        i_tOnDelay := GVL_Constants.c_tInputFilter
+    );
+
+    a_fbResetFilter[iRoll](
+        i_xRaw := GVL_IO.xReset[iRoll],
+        i_tOnDelay := GVL_Constants.c_tInputFilter
+    );
+
+
+    a_fbRollCounter[iRoll](
+        i_udiPulseDelta := GVL_Runtime.a_stHscState[iRoll].udiPulseDelta,
+        i_xPulseDataValid := GVL_Runtime.a_stHscState[iRoll].xDataValid,
+        i_xSplice := a_fbSpliceFilter[iRoll].q_xFiltered,
+        i_xReset := a_fbResetFilter[iRoll].q_xFiltered,
+        i_udiPulsesPerRevolution := GVL_Constants.c_udiEncoderPulsesPerRevolution,
+        i_udiWheelCircumferenceMm := GVL_Constants.c_udiWheelCircumferenceMm,
+        i_uliManualResetMinLengthMm := GVL_Constants.c_uliManualResetMinLengthMm,
+        iq_stState := PersistentVars.a_stRollState[iRoll]
+    );
+
+
+    GVL_Diagnostics.stSystem.xAnyConfigFault :=
+        GVL_Diagnostics.stSystem.xAnyConfigFault
+        OR PersistentVars.a_stRollState[iRoll].xConfigFault;
+
+
+    // При завершении рулона создаём неизменяемый снимок для постоянной очереди.
+    a_xRollEventRequest[iRoll] :=
+        PersistentVars.a_stRollState[iRoll].xRollCompleted;
+
+
+    // Одноцикловые признаки преобразуем в устойчивые состояния для HMI,
+    // которая опрашивает Modbus значительно медленнее цикла программы ПЛК.
+    xRollPulseThisCycle :=
+        GVL_Runtime.a_stHscState[iRoll].xDataValid
+        AND (GVL_Runtime.a_stHscState[iRoll].udiPulseDelta > UDINT#0);
+
+    IF xRollPulseThisCycle THEN
+        a_xHaiwellActivitySeen[iRoll] := TRUE;
+    END_IF;
+
+    a_fbHaiwellActivityTimeout[iRoll](
+        IN := NOT xRollPulseThisCycle,
+        PT := GVL_Constants.c_tHaiwellActivityHold
+    );
+
+    IF a_fbHaiwellActivityTimeout[iRoll].Q THEN
+        a_xHaiwellActivitySeen[iRoll] := FALSE;
+    END_IF;
+
+    xRollResetThisCycle :=
+        (
+            PersistentVars.a_stRollState[iRoll].xShortResetDiscarded
+            OR
+            (
+                PersistentVars.a_stRollState[iRoll].xRollCompleted
+                AND (PersistentVars.a_stRollState[iRoll].eLastEndReason = ROLL_END_RESET)
+            )
+        );
+
+    IF xRollResetThisCycle THEN
+        a_xHaiwellResetSeen[iRoll] := TRUE;
+    END_IF;
+
+    a_fbHaiwellResetTimeout[iRoll](
+        IN := NOT xRollResetThisCycle,
+        PT := GVL_Constants.c_tHaiwellResetHold
+    );
+
+    IF a_fbHaiwellResetTimeout[iRoll].Q THEN
+        a_xHaiwellResetSeen[iRoll] := FALSE;
+    END_IF;
+
+    a_fbHaiwellAttentionFlash[iRoll](
+        i_xTrigger := a_fbSpliceFilter[iRoll].q_xFiltered
+                      OR a_fbResetFilter[iRoll].q_xFiltered,
+        i_tHalfPeriod := GVL_Constants.c_tHaiwellFlashHalfPeriod
+    );
+
+    IF a_xRollEventRequest[iRoll] THEN
+        a_stRollEventRequest[iRoll].udiEventId := UDINT#0; // Настоящий EventId назначит очередь.
+        a_stRollEventRequest[iRoll].udiTimestampUtc := GVL_Runtime.stShiftState.udiTimestampUtc;
+        a_stRollEventRequest[iRoll].usiUnwindNumber := INT_TO_USINT(iRoll);
+        a_stRollEventRequest[iRoll].usiShiftNumber := GVL_Runtime.stShiftState.usiCurrentShift;
+        a_stRollEventRequest[iRoll].eEndReason := PersistentVars.a_stRollState[iRoll].eLastEndReason;
+
+        // Физически недостижимый предел защищает явное преобразование ULINT -> UDINT.
+        IF PersistentVars.a_stRollState[iRoll].uliPreviousRollLengthMm <= ULINT#4294967295 THEN
+            a_stRollEventRequest[iRoll].udiLengthMm :=
+                ULINT_TO_UDINT(PersistentVars.a_stRollState[iRoll].uliPreviousRollLengthMm);
+        ELSE
+            a_stRollEventRequest[iRoll].udiLengthMm := UDINT#4294967295;
+            GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+        END_IF;
+    END_IF;
+
+
+    // Подготавливаем индивидуальную часть пакета VP 2000...2004 для своей панели.
+    a_fbDwinDataPacker[iRoll](
+        i_uliCurrentLengthMm := PersistentVars.a_stRollState[iRoll].uliCurrentLengthMm,
+        i_uliPreviousLengthMm := PersistentVars.a_stRollState[iRoll].uliPreviousRollLengthMm,
+        i_usiUnwindNumber := INT_TO_USINT(iRoll)
+    );
+
+
+    GVL_Diagnostics.stSystem.a_xHmiOverflow[iRoll] :=
+        a_fbDwinDataPacker[iRoll].q_xOverflow;
+
+
+    // Каждая панель имеет собственный массив, удобный для I/O Mapping.
+    CASE iRoll OF
+
+        1:
+            GVL_HMI.a_wHmi1Tx[0] := a_fbDwinDataPacker[iRoll].q_wCurrentHigh;
+            GVL_HMI.a_wHmi1Tx[1] := a_fbDwinDataPacker[iRoll].q_wCurrentLow;
+            GVL_HMI.a_wHmi1Tx[2] := a_fbDwinDataPacker[iRoll].q_wPreviousHigh;
+            GVL_HMI.a_wHmi1Tx[3] := a_fbDwinDataPacker[iRoll].q_wPreviousLow;
+            GVL_HMI.a_wHmi1Tx[4] := a_fbDwinDataPacker[iRoll].q_wUnwindNumber;
+            FOR iDwinWord := 5 TO 12 DO
+                GVL_HMI.a_wHmi1Tx[iDwinWord] := a_wDwinCommon[iDwinWord];
+            END_FOR;
+
+        2:
+            GVL_HMI.a_wHmi2Tx[0] := a_fbDwinDataPacker[iRoll].q_wCurrentHigh;
+            GVL_HMI.a_wHmi2Tx[1] := a_fbDwinDataPacker[iRoll].q_wCurrentLow;
+            GVL_HMI.a_wHmi2Tx[2] := a_fbDwinDataPacker[iRoll].q_wPreviousHigh;
+            GVL_HMI.a_wHmi2Tx[3] := a_fbDwinDataPacker[iRoll].q_wPreviousLow;
+            GVL_HMI.a_wHmi2Tx[4] := a_fbDwinDataPacker[iRoll].q_wUnwindNumber;
+            FOR iDwinWord := 5 TO 12 DO
+                GVL_HMI.a_wHmi2Tx[iDwinWord] := a_wDwinCommon[iDwinWord];
+            END_FOR;
+
+        3:
+            GVL_HMI.a_wHmi3Tx[0] := a_fbDwinDataPacker[iRoll].q_wCurrentHigh;
+            GVL_HMI.a_wHmi3Tx[1] := a_fbDwinDataPacker[iRoll].q_wCurrentLow;
+            GVL_HMI.a_wHmi3Tx[2] := a_fbDwinDataPacker[iRoll].q_wPreviousHigh;
+            GVL_HMI.a_wHmi3Tx[3] := a_fbDwinDataPacker[iRoll].q_wPreviousLow;
+            GVL_HMI.a_wHmi3Tx[4] := a_fbDwinDataPacker[iRoll].q_wUnwindNumber;
+            FOR iDwinWord := 5 TO 12 DO
+                GVL_HMI.a_wHmi3Tx[iDwinWord] := a_wDwinCommon[iDwinWord];
+            END_FOR;
+
+        4:
+            GVL_HMI.a_wHmi4Tx[0] := a_fbDwinDataPacker[iRoll].q_wCurrentHigh;
+            GVL_HMI.a_wHmi4Tx[1] := a_fbDwinDataPacker[iRoll].q_wCurrentLow;
+            GVL_HMI.a_wHmi4Tx[2] := a_fbDwinDataPacker[iRoll].q_wPreviousHigh;
+            GVL_HMI.a_wHmi4Tx[3] := a_fbDwinDataPacker[iRoll].q_wPreviousLow;
+            GVL_HMI.a_wHmi4Tx[4] := a_fbDwinDataPacker[iRoll].q_wUnwindNumber;
+            FOR iDwinWord := 5 TO 12 DO
+                GVL_HMI.a_wHmi4Tx[iDwinWord] := a_wDwinCommon[iDwinWord];
+            END_FOR;
+
+        5:
+            GVL_HMI.a_wHmi5Tx[0] := a_fbDwinDataPacker[iRoll].q_wCurrentHigh;
+            GVL_HMI.a_wHmi5Tx[1] := a_fbDwinDataPacker[iRoll].q_wCurrentLow;
+            GVL_HMI.a_wHmi5Tx[2] := a_fbDwinDataPacker[iRoll].q_wPreviousHigh;
+            GVL_HMI.a_wHmi5Tx[3] := a_fbDwinDataPacker[iRoll].q_wPreviousLow;
+            GVL_HMI.a_wHmi5Tx[4] := a_fbDwinDataPacker[iRoll].q_wUnwindNumber;
+            FOR iDwinWord := 5 TO 12 DO
+                GVL_HMI.a_wHmi5Tx[iDwinWord] := a_wDwinCommon[iDwinWord];
+            END_FOR;
+
+    END_CASE;
+
+END_FOR;
+
+
+// ============================================================
+// 5. Постоянная очередь событий и подтверждение сервера
+// ============================================================
+
+// Сервер передаёт EventId двумя 16-битными словами, старшее слово первым.
+udiAckEventId :=
+    WORD_TO_UDINT(GVL_SCADA.a_wAckEventId[0]) * UDINT#65536
+    + WORD_TO_UDINT(GVL_SCADA.a_wAckEventId[1]);
+
+
+fbRollEventQueue(
+    i_a_xEnqueue := a_xRollEventRequest,
+    i_a_stEvent := a_stRollEventRequest,
+    i_udiAckEventId := udiAckEventId,
+    i_wAckCommand := GVL_SCADA.wAckCommand,
+    iq_a_stQueue := PersistentVars.a_stEventQueue,
+    iq_uiQueueHead := PersistentVars.uiEventQueueHead,
+    iq_uiQueueTail := PersistentVars.uiEventQueueTail,
+    iq_uiQueueCount := PersistentVars.uiEventQueueCount,
+    iq_udiNextEventId := PersistentVars.udiNextEventId,
+    iq_udiOverflowCount := PersistentVars.udiQueueOverflowCount
+);
+
+
+// Команда одноразовая: после обработки ПЛК очищает её сам.
+IF fbRollEventQueue.q_xAckCommandConsumed THEN
+    GVL_SCADA.wAckCommand := WORD#0;
+END_IF;
+
+
+// Результат последнего подтверждения сохраняется для диагностики.
+IF fbRollEventQueue.q_xAckAccepted THEN
+    GVL_SCADA.wLastAckResult := WORD#1;
+ELSIF fbRollEventQueue.q_xAckRejected THEN
+    GVL_SCADA.wLastAckResult := WORD#2;
+END_IF;
+
+
+// Первое неподтверждённое событие остаётся неизменным до правильного ACK.
+fbEventPacker(
+    i_xEventValid := fbRollEventQueue.q_xEventReady,
+    i_stEvent := fbRollEventQueue.q_stCurrentEvent
+);
+
+FOR iPacketWord := 0 TO 11 DO
+    GVL_SCADA.a_wEventPacket[iPacketWord] :=
+        fbEventPacker.q_a_wPacket[iPacketWord];
+END_FOR;
+
+
+IF fbEventPacker.q_xPacketValid THEN
+    GVL_SCADA.wEventReady := WORD#1;
+ELSE
+    GVL_SCADA.wEventReady := WORD#0;
+END_IF;
+
+GVL_SCADA.wQueueCount := UINT_TO_WORD(fbRollEventQueue.q_uiQueueCount);
+GVL_SCADA.wQueueCapacity := WORD#128;
+
+GVL_SCADA.a_wQueueOverflowCount[0] :=
+    UDINT_TO_WORD(PersistentVars.udiQueueOverflowCount / UDINT#65536);
+GVL_SCADA.a_wQueueOverflowCount[1] :=
+    UDINT_TO_WORD(PersistentVars.udiQueueOverflowCount MOD UDINT#65536);
+
+
+IF fbRollEventQueue.q_xStorageFault THEN
+    GVL_SCADA.wQueueStatus := WORD#3;
+ELSIF fbRollEventQueue.q_xEventIdExhausted THEN
+    GVL_SCADA.wQueueStatus := WORD#4;
+ELSIF fbRollEventQueue.q_xQueueFull THEN
+    GVL_SCADA.wQueueStatus := WORD#2;
+ELSIF fbRollEventQueue.q_xEventReady THEN
+    GVL_SCADA.wQueueStatus := WORD#1;
+ELSE
+    GVL_SCADA.wQueueStatus := WORD#0;
+END_IF;
+
+
+// ============================================================
+// 6. Шестой энкодер: скорость и общий метраж линии
+// ============================================================
+
+IF xStopJournalFirstCycle THEN
+    GVL_Runtime.stLineState.uliTotalPulses := PersistentVars.stStopJournal.uliLinePulses;
+END_IF;
+
+fbLineMeter(
+    i_udiPulseDelta := GVL_Runtime.a_stHscState[6].udiPulseDelta,
+    i_xPulseDataValid := GVL_Runtime.a_stHscState[6].xDataValid,
+    i_udiPulsesPerRevolution := GVL_Constants.c_udiEncoderPulsesPerRevolution,
+    i_udiWheelCircumferenceMm := GVL_Constants.c_udiWheelCircumferenceMm,
+    i_tSpeedSample := GVL_Constants.c_tSpeedSample,
+    iq_stState := GVL_Runtime.stLineState
+);
+
+PersistentVars.stStopJournal.uliLinePulses := GVL_Runtime.stLineState.uliTotalPulses;
+
+
+GVL_Diagnostics.stSystem.xAnyConfigFault :=
+    GVL_Diagnostics.stSystem.xAnyConfigFault
+    OR GVL_Runtime.stLineState.xConfigFault;
+
+
+// ============================================================
+// 7. Изолированный интерфейс Стопмашины линии ЛГК
+// ============================================================
+
+// Все 32-битные поля сервер передаёт старшим словом вперёд.
+udiServerOrderDatabaseId :=
+    WORD_TO_UDINT(GVL_SCADA.a_wOrderDatabaseId[0]) * UDINT#65536
+    + WORD_TO_UDINT(GVL_SCADA.a_wOrderDatabaseId[1]);
+
+udiServerOrderTechnicalCard :=
+    WORD_TO_UDINT(GVL_SCADA.a_wOrderTechnicalCard[0]) * UDINT#65536
+    + WORD_TO_UDINT(GVL_SCADA.a_wOrderTechnicalCard[1]);
+
+udiServerOrderNumber :=
+    WORD_TO_UDINT(GVL_SCADA.a_wOrderDisplayNumber[0]) * UDINT#65536
+    + WORD_TO_UDINT(GVL_SCADA.a_wOrderDisplayNumber[1]);
+
+stStopBeforeUpdate := GVL_Runtime.stStopMachine;
+
+fbStopMachine(
+    i_uliTotalLengthMm := GVL_Runtime.stLineState.uliTotalLengthMm,
+    i_rSpeedMPerMin := GVL_Runtime.stLineState.rSpeedMPerMin,
+    i_xMoving := GVL_Runtime.stLineState.xMoving,
+    i_xLineDataValid := GVL_Runtime.a_stHscState[6].xDataValid
+                        AND NOT GVL_Runtime.stLineState.xConfigFault,
+    i_usiCurrentShift := GVL_Runtime.stShiftState.usiCurrentShift,
+    i_xShiftChanged := GVL_Runtime.stShiftState.xShiftChanged,
+    i_xRtcValid := GVL_Runtime.stShiftState.xRtcValid,
+    i_wRestoredState := PersistentVars.stStopJournal.wLastState,
+    i_wCommandCode := GVL_StopMachine.wCommandCode,
+    i_wCommandSequence := GVL_StopMachine.wCommandSequence,
+    i_wParam0 := GVL_StopMachine.wCommandParam0,
+    i_wParam1 := GVL_StopMachine.wCommandParam1,
+    i_wParam2 := GVL_StopMachine.wCommandParam2,
+    i_wSettingStartDetectLengthDm := GVL_StopMachine.wSettingStartDetectLengthDm,
+    i_wSettingAreaCoefficientX100 := GVL_StopMachine.wSettingAreaCoefficientX100,
+    i_wSettingChangeoverTenthsMin := GVL_StopMachine.wSettingChangeoverTenthsMin,
+    i_wServerOrderCommand := GVL_SCADA.wOrderCommand,
+    i_wServerOrderSequence := GVL_SCADA.wOrderSequence,
+    i_udiServerOrderDatabaseId := udiServerOrderDatabaseId,
+    i_udiServerOrderTechnicalCard := udiServerOrderTechnicalCard,
+    i_udiServerOrderNumber := udiServerOrderNumber,
+    i_wServerOrderSourceShift := GVL_SCADA.wOrderSourceShift,
+    i_wServerOrderNominalSpeed := GVL_SCADA.wOrderNominalSpeed,
+    i_wServerChangeoverTenthsMin := GVL_SCADA.wOrderChangeoverTenthsMin,
+    iq_stPersistent := PersistentVars.stStopMachine,
+    iq_stState := GVL_Runtime.stStopMachine
+);
+
+
+// Команда одноразовая. Все параметры HMI записывает до CommandCode.
+IF fbStopMachine.q_xCommandConsumed THEN
+    GVL_StopMachine.wCommandCode := WORD#0;
+END_IF;
+
+// Серверная команда также одноразовая и очищается независимо от результата.
+IF fbStopMachine.q_xServerOrderCommandConsumed THEN
+    GVL_SCADA.wOrderCommand := WORD#0;
+END_IF;
+
+GVL_SCADA.wOrderApplyResult := GVL_Runtime.stStopMachine.wLastServerOrderResult;
+GVL_SCADA.wLastOrderSequence := GVL_Runtime.stStopMachine.wLastServerOrderSequence;
+
+
+// PLC heartbeat изменяется раз в секунду и позволяет HMI обнаружить обрыв связи.
+fbInterfaceHeartbeat(
+    IN := NOT fbInterfaceHeartbeat.Q,
+    PT := T#1s
+);
+
+IF fbInterfaceHeartbeat.Q THEN
+    IF WORD_TO_UINT(GVL_StopMachine.wPlcHeartbeat) < UINT#65535 THEN
+        GVL_StopMachine.wPlcHeartbeat :=
+            UINT_TO_WORD(WORD_TO_UINT(GVL_StopMachine.wPlcHeartbeat) + UINT#1);
+    ELSE
+        GVL_StopMachine.wPlcHeartbeat := WORD#0;
+    END_IF;
+END_IF;
+
+
+GVL_StopMachine.wSignature := GVL_Constants.c_wStopMachineSignature;
+GVL_StopMachine.wProtocolVersion := GVL_Constants.c_wStopMachineProtocolVersion;
+GVL_StopMachine.wStateCode := GVL_Runtime.stStopMachine.wStateCode;
+GVL_StopMachine.wStatusBits := GVL_Runtime.stStopMachine.wStatusBits;
+GVL_StopMachine.wAlarmBits := GVL_Runtime.stStopMachine.wAlarmBits;
+GVL_StopMachine.wShiftNumber := USINT_TO_WORD(GVL_Runtime.stShiftState.usiCurrentShift);
+GVL_StopMachine.wLocalHour := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalHour);
+GVL_StopMachine.wLocalMinute := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMinute);
+GVL_StopMachine.wLocalSecond := UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalSecond);
+
+GVL_StopMachine.a_wOrderNumber[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiOrderNumber / UDINT#65536);
+GVL_StopMachine.a_wOrderNumber[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiOrderNumber MOD UDINT#65536);
+
+GVL_StopMachine.a_wOrderLengthDm[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiCurrentOrderLengthDm / UDINT#65536);
+GVL_StopMachine.a_wOrderLengthDm[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiCurrentOrderLengthDm MOD UDINT#65536);
+
+GVL_StopMachine.a_wOrderAreaX100[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiCurrentOrderAreaX100 / UDINT#65536);
+GVL_StopMachine.a_wOrderAreaX100[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiCurrentOrderAreaX100 MOD UDINT#65536);
+
+GVL_StopMachine.a_wShiftLengthDm[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiShiftLengthDm / UDINT#65536);
+GVL_StopMachine.a_wShiftLengthDm[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiShiftLengthDm MOD UDINT#65536);
+
+GVL_StopMachine.a_wShiftAreaX100[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiShiftAreaX100 / UDINT#65536);
+GVL_StopMachine.a_wShiftAreaX100[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiShiftAreaX100 MOD UDINT#65536);
+
+GVL_StopMachine.wSpeedDmPerMin := UINT_TO_WORD(GVL_Runtime.stStopMachine.uiSpeedDmPerMin);
+GVL_StopMachine.wChangeoverRemainingTenthsMin :=
+    UINT_TO_WORD(GVL_Runtime.stStopMachine.uiChangeoverRemainingTenthsMin);
+GVL_StopMachine.wChangeoverSetpointTenthsMin :=
+    UINT_TO_WORD(PersistentVars.stStopMachine.uiChangeoverSetpointTenthsMin);
+GVL_StopMachine.wStartDetectLengthDm :=
+    UINT_TO_WORD(PersistentVars.stStopMachine.uiStartDetectLengthDm);
+GVL_StopMachine.wAreaCoefficientX100 :=
+    UINT_TO_WORD(PersistentVars.stStopMachine.uiAreaCoefficientX100);
+GVL_StopMachine.wLastBreakPoint :=
+    USINT_TO_WORD(GVL_Runtime.stStopMachine.usiLastBreakPoint);
+GVL_StopMachine.wLastBreakSide :=
+    USINT_TO_WORD(GVL_Runtime.stStopMachine.usiLastBreakSide);
+GVL_StopMachine.wLastBreakReason :=
+    USINT_TO_WORD(GVL_Runtime.stStopMachine.usiLastBreakReason);
+
+IF GVL_Runtime.stStopMachine.xPackingComplete THEN
+    GVL_StopMachine.wPackingComplete := WORD#1;
+ELSE
+    GVL_StopMachine.wPackingComplete := WORD#0;
+END_IF;
+
+GVL_StopMachine.wLastCommandResult := GVL_Runtime.stStopMachine.wLastCommandResult;
+GVL_StopMachine.wLastProcessedSequence := GVL_Runtime.stStopMachine.wLastProcessedSequence;
+
+// Защитный инвариант: Стопмашина работает только с отчётом и никогда
+// не выдаёт команд физическому оборудованию.
+GVL_StopMachine.wPhysicalControlEnabled := WORD#0;
+
+GVL_StopMachine.a_wOrderDatabaseId[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiOrderDatabaseId / UDINT#65536);
+GVL_StopMachine.a_wOrderDatabaseId[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiOrderDatabaseId MOD UDINT#65536);
+
+GVL_StopMachine.a_wOrderTechnicalCard[0] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiOrderTechnicalCard / UDINT#65536);
+GVL_StopMachine.a_wOrderTechnicalCard[1] :=
+    UDINT_TO_WORD(GVL_Runtime.stStopMachine.udiOrderTechnicalCard MOD UDINT#65536);
+
+GVL_StopMachine.wOrderSourceShift :=
+    UINT_TO_WORD(GVL_Runtime.stStopMachine.uiOrderSourceShift);
+GVL_StopMachine.wOrderNominalSpeed :=
+    UINT_TO_WORD(GVL_Runtime.stStopMachine.uiOrderNominalSpeed);
+GVL_StopMachine.wOperatorNumber :=
+    UINT_TO_WORD(GVL_Runtime.stStopMachine.uiOperatorNumber);
+
+
+GVL_Diagnostics.stSystem.xAnyConfigFault :=
+    GVL_Diagnostics.stSystem.xAnyConfigFault
+    OR GVL_Runtime.stStopMachine.xConfigFault;
+
+// ============================================================
+// 7а. Постоянный журнал переходов ЛГК для подтверждаемой отправки
+// ============================================================
+
+a_xStopJournalEnqueue[1] := FALSE;
+a_xStopJournalEnqueue[2] := FALSE;
+a_stStopJournalEnqueue[1] := stEmptyStopJournalEvent;
+a_stStopJournalEnqueue[2] := stEmptyStopJournalEvent;
+
+IF xStopJournalFirstCycle THEN
+    wStopPreviousState := GVL_Runtime.stStopMachine.wStateCode;
+    wStopPreviousShift := USINT_TO_WORD(GVL_Runtime.stShiftState.usiCurrentShift);
+    udiStopPreviousOrderDbId := GVL_Runtime.stStopMachine.udiOrderDatabaseId;
+    xStopJournalFirstCycle := FALSE;
+ELSE
+    // На границе смены сохраняем завершённую смену до обнуления её итогов.
+    IF GVL_Runtime.stShiftState.xShiftChanged
+       AND (wStopPreviousShift >= WORD#1)
+       AND (wStopPreviousShift <= WORD#2) THEN
+        stStopEvent.wKind := WORD#2;
+        stStopEvent.wStateCode := WORD#32768;
+        stStopEvent.wShiftNumber := wStopPreviousShift;
+        stStopEvent.udiOrderNumber := stStopBeforeUpdate.udiOrderNumber;
+        stStopEvent.udiOrderLengthDm := stStopBeforeUpdate.udiCurrentOrderLengthDm;
+        stStopEvent.udiOrderAreaX100 := stStopBeforeUpdate.udiCurrentOrderAreaX100;
+        stStopEvent.udiShiftLengthDm := stStopBeforeUpdate.udiShiftLengthDm;
+        stStopEvent.udiShiftAreaX100 := stStopBeforeUpdate.udiShiftAreaX100;
+        stStopEvent.wSpeedDmPerMin := UINT_TO_WORD(stStopBeforeUpdate.uiSpeedDmPerMin);
+        stStopEvent.wOperatorNumber := UINT_TO_WORD(stStopBeforeUpdate.uiOperatorNumber);
+        stStopEvent.wChangeoverSetpointTenthsMin :=
+            UINT_TO_WORD(PersistentVars.stStopMachine.uiChangeoverSetpointTenthsMin);
+        stStopEvent.wAlarmBits := stStopBeforeUpdate.wAlarmBits;
+        stStopEvent.wBreakPoint := USINT_TO_WORD(stStopBeforeUpdate.usiLastBreakPoint);
+        stStopEvent.wBreakSide := USINT_TO_WORD(stStopBeforeUpdate.usiLastBreakSide);
+        stStopEvent.wBreakReason := USINT_TO_WORD(stStopBeforeUpdate.usiLastBreakReason);
+        IF GVL_Runtime.stShiftState.xRtcValid THEN
+            stStopEvent.udiTimestampUtc := GVL_Runtime.stShiftState.udiTimestampUtc;
+        ELSE
+            stStopEvent.udiTimestampUtc := UDINT#0;
+        END_IF;
+        a_stStopJournalEnqueue[1] := stStopEvent;
+        a_xStopJournalEnqueue[1] := TRUE;
+    END_IF;
+
+    // Любой новый код, новый заказ или смена подробностей обрыва — одно событие.
+    IF ((GVL_Runtime.stStopMachine.wStateCode <> wStopPreviousState)
+        OR (GVL_Runtime.stStopMachine.udiOrderDatabaseId <> udiStopPreviousOrderDbId)
+        OR fbStopMachine.q_xBreakRecorded)
+       AND (GVL_Runtime.stStopMachine.wStateCode <> WORD#0) THEN
+        stStopEvent := stEmptyStopJournalEvent;
+        IF GVL_Runtime.stStopMachine.udiOrderDatabaseId <> udiStopPreviousOrderDbId THEN
+            stStopEvent.wKind := WORD#3;
+        ELSE
+            stStopEvent.wKind := WORD#1;
+        END_IF;
+        stStopEvent.wStateCode := GVL_Runtime.stStopMachine.wStateCode;
+        stStopEvent.wShiftNumber := USINT_TO_WORD(GVL_Runtime.stShiftState.usiCurrentShift);
+        stStopEvent.udiOrderNumber := GVL_Runtime.stStopMachine.udiOrderNumber;
+        stStopEvent.udiOrderLengthDm := GVL_Runtime.stStopMachine.udiCurrentOrderLengthDm;
+        stStopEvent.udiOrderAreaX100 := GVL_Runtime.stStopMachine.udiCurrentOrderAreaX100;
+        stStopEvent.udiShiftLengthDm := GVL_Runtime.stStopMachine.udiShiftLengthDm;
+        stStopEvent.udiShiftAreaX100 := GVL_Runtime.stStopMachine.udiShiftAreaX100;
+        stStopEvent.wSpeedDmPerMin := UINT_TO_WORD(GVL_Runtime.stStopMachine.uiSpeedDmPerMin);
+        stStopEvent.wOperatorNumber := UINT_TO_WORD(GVL_Runtime.stStopMachine.uiOperatorNumber);
+        stStopEvent.wChangeoverSetpointTenthsMin :=
+            UINT_TO_WORD(PersistentVars.stStopMachine.uiChangeoverSetpointTenthsMin);
+        stStopEvent.wAlarmBits := GVL_Runtime.stStopMachine.wAlarmBits;
+        stStopEvent.wBreakPoint := USINT_TO_WORD(GVL_Runtime.stStopMachine.usiLastBreakPoint);
+        stStopEvent.wBreakSide := USINT_TO_WORD(GVL_Runtime.stStopMachine.usiLastBreakSide);
+        stStopEvent.wBreakReason := USINT_TO_WORD(GVL_Runtime.stStopMachine.usiLastBreakReason);
+        IF GVL_Runtime.stShiftState.xRtcValid THEN
+            stStopEvent.udiTimestampUtc := GVL_Runtime.stShiftState.udiTimestampUtc;
+        ELSE
+            stStopEvent.udiTimestampUtc := UDINT#0;
+        END_IF;
+        a_stStopJournalEnqueue[2] := stStopEvent;
+        a_xStopJournalEnqueue[2] := TRUE;
+    END_IF;
+
+    wStopPreviousState := GVL_Runtime.stStopMachine.wStateCode;
+    wStopPreviousShift := USINT_TO_WORD(GVL_Runtime.stShiftState.usiCurrentShift);
+    udiStopPreviousOrderDbId := GVL_Runtime.stStopMachine.udiOrderDatabaseId;
+END_IF;
+
+IF GVL_Runtime.stStopMachine.wStateCode <> WORD#0 THEN
+    PersistentVars.stStopJournal.wLastState := GVL_Runtime.stStopMachine.wStateCode;
+END_IF;
+
+udiStopAckEventId :=
+    WORD_TO_UDINT(GVL_StopJournal.a_wAckEventId[0]) * UDINT#65536
+    + WORD_TO_UDINT(GVL_StopJournal.a_wAckEventId[1]);
+
+fbStopJournalQueue(
+    i_a_xEnqueue := a_xStopJournalEnqueue,
+    i_a_stEvent := a_stStopJournalEnqueue,
+    i_udiAckEventId := udiStopAckEventId,
+    i_wAckCommand := GVL_StopJournal.wAckCommand,
+    iq_a_stQueue := PersistentVars.stStopJournal.a_stQueue,
+    iq_uiHead := PersistentVars.stStopJournal.uiHead,
+    iq_uiTail := PersistentVars.stStopJournal.uiTail,
+    iq_uiCount := PersistentVars.stStopJournal.uiCount,
+    iq_udiNextId := PersistentVars.stStopJournal.udiNextEventId,
+    iq_udiOverflow := PersistentVars.stStopJournal.udiOverflowCount
+);
+
+IF fbStopJournalQueue.q_xAckConsumed THEN
+    GVL_StopJournal.wAckCommand := WORD#0;
+    IF fbStopJournalQueue.q_xAckAccepted THEN
+        GVL_StopJournal.wLastAckResult := WORD#1;
+    ELSE
+        GVL_StopJournal.wLastAckResult := WORD#2;
+    END_IF;
+END_IF;
+
+GVL_StopJournal.wSignature := WORD#16#534A;
+GVL_StopJournal.wVersion := WORD#1;
+GVL_StopJournal.a_wEventId[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiEventId / UDINT#65536);
+GVL_StopJournal.a_wEventId[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiEventId MOD UDINT#65536);
+GVL_StopJournal.a_wTimestampUtc[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiTimestampUtc / UDINT#65536);
+GVL_StopJournal.a_wTimestampUtc[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiTimestampUtc MOD UDINT#65536);
+GVL_StopJournal.wKind := fbStopJournalQueue.q_stHead.wKind;
+GVL_StopJournal.wStateCode := fbStopJournalQueue.q_stHead.wStateCode;
+GVL_StopJournal.wShiftNumber := fbStopJournalQueue.q_stHead.wShiftNumber;
+GVL_StopJournal.a_wOrderNumber[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiOrderNumber / UDINT#65536);
+GVL_StopJournal.a_wOrderNumber[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiOrderNumber MOD UDINT#65536);
+GVL_StopJournal.a_wOrderLengthDm[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiOrderLengthDm / UDINT#65536);
+GVL_StopJournal.a_wOrderLengthDm[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiOrderLengthDm MOD UDINT#65536);
+GVL_StopJournal.a_wOrderAreaX100[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiOrderAreaX100 / UDINT#65536);
+GVL_StopJournal.a_wOrderAreaX100[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiOrderAreaX100 MOD UDINT#65536);
+GVL_StopJournal.wSpeedDmPerMin := fbStopJournalQueue.q_stHead.wSpeedDmPerMin;
+GVL_StopJournal.wOperatorNumber := fbStopJournalQueue.q_stHead.wOperatorNumber;
+GVL_StopJournal.wChangeoverSetpointTenthsMin :=
+    fbStopJournalQueue.q_stHead.wChangeoverSetpointTenthsMin;
+GVL_StopJournal.wAlarmBits := fbStopJournalQueue.q_stHead.wAlarmBits;
+GVL_StopJournal.wBreakPoint := fbStopJournalQueue.q_stHead.wBreakPoint;
+GVL_StopJournal.wBreakSide := fbStopJournalQueue.q_stHead.wBreakSide;
+GVL_StopJournal.wBreakReason := fbStopJournalQueue.q_stHead.wBreakReason;
+GVL_StopJournal.a_wShiftLengthDm[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiShiftLengthDm / UDINT#65536);
+GVL_StopJournal.a_wShiftLengthDm[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiShiftLengthDm MOD UDINT#65536);
+GVL_StopJournal.a_wShiftAreaX100[0] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiShiftAreaX100 / UDINT#65536);
+GVL_StopJournal.a_wShiftAreaX100[1] :=
+    UDINT_TO_WORD(fbStopJournalQueue.q_stHead.udiShiftAreaX100 MOD UDINT#65536);
+IF fbStopJournalQueue.q_xReady THEN
+    GVL_StopJournal.wEventReady := WORD#1;
+ELSE
+    GVL_StopJournal.wEventReady := WORD#0;
+END_IF;
+GVL_StopJournal.wQueueCount := UINT_TO_WORD(PersistentVars.stStopJournal.uiCount);
+IF fbStopJournalQueue.q_xStorageFault THEN
+    GVL_StopJournal.wQueueStatus := WORD#3;
+ELSIF fbStopJournalQueue.q_xIdExhausted THEN
+    GVL_StopJournal.wQueueStatus := WORD#4;
+ELSIF PersistentVars.stStopJournal.udiOverflowCount > UDINT#0 THEN
+    GVL_StopJournal.wQueueStatus := WORD#2;
+ELSIF fbStopJournalQueue.q_xFull THEN
+    GVL_StopJournal.wQueueStatus := WORD#1;
+ELSE
+    GVL_StopJournal.wQueueStatus := WORD#0;
+END_IF;
+GVL_StopJournal.a_wOverflowCount[0] :=
+    UDINT_TO_WORD(PersistentVars.stStopJournal.udiOverflowCount / UDINT#65536);
+GVL_StopJournal.a_wOverflowCount[1] :=
+    UDINT_TO_WORD(PersistentVars.stStopJournal.udiOverflowCount MOD UDINT#65536);
+GVL_StopJournal.wHeartbeat := GVL_StopMachine.wPlcHeartbeat;
+
+
+// ============================================================
+// 8. Центральная Haiwell A10-W: только чтение
+// ============================================================
+
+// Связь со сборщиком считается установленной только после первого изменения
+// его heartbeat и пока между изменениями прошло не более пяти секунд.
+xCollectorHeartbeatChanged :=
+    GVL_SCADA.wCollectorHeartbeat <> wCollectorHeartbeatPrevious;
+
+IF xCollectorHeartbeatChanged THEN
+    wCollectorHeartbeatPrevious := GVL_SCADA.wCollectorHeartbeat;
+    xCollectorHeartbeatSeen := TRUE;
+END_IF;
+
+fbCollectorTimeout(
+    IN := NOT xCollectorHeartbeatChanged,
+    PT := T#5s
+);
+
+xCollectorConnected :=
+    xCollectorHeartbeatSeen AND NOT fbCollectorTimeout.Q;
+
+
+GVL_HAIWELL.wHmiSignature := WORD#16#484D; // ASCII "HM".
+GVL_HAIWELL.wHmiProtocolVersion := GVL_Constants.c_wHaiwellProtocolVersion;
+GVL_HAIWELL.wPlcHeartbeat := GVL_StopMachine.wPlcHeartbeat;
+GVL_HAIWELL.wCurrentShift :=
+    USINT_TO_WORD(GVL_Runtime.stShiftState.usiCurrentShift);
+GVL_HAIWELL.wLocalHour :=
+    UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalHour);
+GVL_HAIWELL.wLocalMinute :=
+    UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMinute);
+GVL_HAIWELL.wLocalYear :=
+    UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalYear);
+GVL_HAIWELL.wLocalMonth :=
+    UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalMonth);
+GVL_HAIWELL.wLocalDay :=
+    UINT_TO_WORD(GVL_Runtime.stShiftState.uiLocalDay);
+GVL_HAIWELL.wEventQueueCount := GVL_SCADA.wQueueCount;
+GVL_HAIWELL.wEventQueueStatus := GVL_SCADA.wQueueStatus;
+GVL_HAIWELL.wLastAckResult := GVL_SCADA.wLastAckResult;
+
+
+// Системные биты: активность PLC, RTC, сборщик, очередь и конфигурация.
+GVL_HAIWELL.wSystemStatusBits := WORD#16#0001;
+IF GVL_Runtime.stShiftState.xRtcValid THEN
+    GVL_HAIWELL.wSystemStatusBits :=
+        GVL_HAIWELL.wSystemStatusBits OR WORD#16#0002;
+END_IF;
+IF xCollectorConnected THEN
+    GVL_HAIWELL.wSystemStatusBits :=
+        GVL_HAIWELL.wSystemStatusBits OR WORD#16#0004;
+END_IF;
+IF (GVL_SCADA.wQueueStatus = WORD#3)
+   OR (GVL_SCADA.wQueueStatus = WORD#4) THEN
+    GVL_HAIWELL.wSystemStatusBits :=
+        GVL_HAIWELL.wSystemStatusBits OR WORD#16#0008;
+END_IF;
+IF GVL_SCADA.wQueueStatus = WORD#2 THEN
+    GVL_HAIWELL.wSystemStatusBits :=
+        GVL_HAIWELL.wSystemStatusBits OR WORD#16#0010;
+END_IF;
+IF GVL_Diagnostics.stSystem.xAnyConfigFault
+   OR GVL_Diagnostics.stSystem.xAnyHscFault THEN
+    GVL_HAIWELL.wSystemStatusBits :=
+        GVL_HAIWELL.wSystemStatusBits OR WORD#16#0020;
+END_IF;
+
+
+uliShiftRawTotalMm := ULINT#0;
+
+FOR iRoll := 1 TO GVL_Constants.c_iRollChannelCount DO
+    // Текущий и предыдущий рулон уже безопасно упакованы для DWIN.
+    GVL_HAIWELL.a_wCurrentLengthX10[iRoll, 0] :=
+        a_fbDwinDataPacker[iRoll].q_wCurrentHigh;
+    GVL_HAIWELL.a_wCurrentLengthX10[iRoll, 1] :=
+        a_fbDwinDataPacker[iRoll].q_wCurrentLow;
+    GVL_HAIWELL.a_wPreviousLengthX10[iRoll, 0] :=
+        a_fbDwinDataPacker[iRoll].q_wPreviousHigh;
+    GVL_HAIWELL.a_wPreviousLengthX10[iRoll, 1] :=
+        a_fbDwinDataPacker[iRoll].q_wPreviousLow;
+
+    GVL_HAIWELL.a_wUnwindStatus[iRoll] := WORD#0;
+    IF NOT PersistentVars.a_stRollState[iRoll].xConfigFault THEN
+        GVL_HAIWELL.a_wUnwindStatus[iRoll] :=
+            GVL_HAIWELL.a_wUnwindStatus[iRoll] OR WORD#16#0001;
+    END_IF;
+    IF a_xHaiwellActivitySeen[iRoll] THEN
+        GVL_HAIWELL.a_wUnwindStatus[iRoll] :=
+            GVL_HAIWELL.a_wUnwindStatus[iRoll] OR WORD#16#0002;
+    END_IF;
+    IF a_fbSpliceFilter[iRoll].q_xFiltered THEN
+        GVL_HAIWELL.a_wUnwindStatus[iRoll] :=
+            GVL_HAIWELL.a_wUnwindStatus[iRoll] OR WORD#16#0004;
+    END_IF;
+    IF a_xHaiwellResetSeen[iRoll] THEN
+        GVL_HAIWELL.a_wUnwindStatus[iRoll] :=
+            GVL_HAIWELL.a_wUnwindStatus[iRoll] OR WORD#16#0008;
+    END_IF;
+    IF PersistentVars.a_stRollState[iRoll].xConfigFault THEN
+        GVL_HAIWELL.a_wUnwindStatus[iRoll] :=
+            GVL_HAIWELL.a_wUnwindStatus[iRoll] OR WORD#16#0010;
+    END_IF;
+
+    // Состояние строки обзора: жёлтая полуволна трёхкратной индикации
+    // SPLICE/RESET имеет приоритет над признаком движения.
+    IF a_fbHaiwellAttentionFlash[iRoll].q_xFlashOn THEN
+        GVL_HAIWELL.a_wUnwindDisplayState[iRoll] := WORD#2;
+    ELSIF a_xHaiwellActivitySeen[iRoll] THEN
+        GVL_HAIWELL.a_wUnwindDisplayState[iRoll] := WORD#1;
+    ELSE
+        GVL_HAIWELL.a_wUnwindDisplayState[iRoll] := WORD#0;
+    END_IF;
+
+    CASE PersistentVars.a_stRollState[iRoll].eLastEndReason OF
+        ROLL_END_SPLICE:
+            GVL_HAIWELL.a_wLastEndReason[iRoll] := WORD#1;
+        ROLL_END_RESET:
+            GVL_HAIWELL.a_wLastEndReason[iRoll] := WORD#2;
+        ELSE
+            GVL_HAIWELL.a_wLastEndReason[iRoll] := WORD#0;
+    END_CASE;
+
+    // Отброшенная длина: миллиметры -> 0,1 м, с насыщением UDINT.
+    uliHaiwellValueX10 :=
+        PersistentVars.a_stRollState[iRoll].uliDiscardedTotalLengthMm / ULINT#100;
+    IF uliHaiwellValueX10 <= ULINT#4294967295 THEN
+        udiHaiwellValueX10 := ULINT_TO_UDINT(uliHaiwellValueX10);
+    ELSE
+        udiHaiwellValueX10 := UDINT#4294967295;
+        GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+        GVL_HAIWELL.wSystemStatusBits :=
+            GVL_HAIWELL.wSystemStatusBits OR WORD#16#0020;
+    END_IF;
+    GVL_HAIWELL.a_wDiscardedLengthX10[iRoll, 0] :=
+        UDINT_TO_WORD(udiHaiwellValueX10 / UDINT#65536);
+    GVL_HAIWELL.a_wDiscardedLengthX10[iRoll, 1] :=
+        UDINT_TO_WORD(udiHaiwellValueX10 MOD UDINT#65536);
+
+
+    // Расход сырья этого раската за смену: импульсы -> мм -> 0,1 м.
+    uliShiftLengthMm :=
+        (PersistentVars.a_uliShiftRollPulses[iRoll]
+         * UDINT_TO_ULINT(GVL_Constants.c_udiWheelCircumferenceMm))
+        / UDINT_TO_ULINT(GVL_Constants.c_udiEncoderPulsesPerRevolution);
+
+    IF uliShiftRawTotalMm
+       <= (ULINT#18446744073709551615 - uliShiftLengthMm) THEN
+        uliShiftRawTotalMm := uliShiftRawTotalMm + uliShiftLengthMm;
+    ELSE
+        uliShiftRawTotalMm := ULINT#18446744073709551615;
+        GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+    END_IF;
+
+    uliHaiwellValueX10 := uliShiftLengthMm / ULINT#100;
+    IF uliHaiwellValueX10 <= ULINT#4294967295 THEN
+        udiHaiwellValueX10 := ULINT_TO_UDINT(uliHaiwellValueX10);
+    ELSE
+        udiHaiwellValueX10 := UDINT#4294967295;
+        GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+    END_IF;
+    GVL_HAIWELL.a_wShiftRollLengthX10[iRoll, 0] :=
+        UDINT_TO_WORD(udiHaiwellValueX10 / UDINT#65536);
+    GVL_HAIWELL.a_wShiftRollLengthX10[iRoll, 1] :=
+        UDINT_TO_WORD(udiHaiwellValueX10 MOD UDINT#65536);
+END_FOR;
+
+
+// Общий выпуск шестого энкодера: миллиметры -> 0,1 м.
+uliHaiwellValueX10 := GVL_Runtime.stLineState.uliTotalLengthMm / ULINT#100;
+IF uliHaiwellValueX10 <= ULINT#4294967295 THEN
+    udiHaiwellValueX10 := ULINT_TO_UDINT(uliHaiwellValueX10);
+ELSE
+    udiHaiwellValueX10 := UDINT#4294967295;
+    GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+    GVL_HAIWELL.wSystemStatusBits :=
+        GVL_HAIWELL.wSystemStatusBits OR WORD#16#0020;
+END_IF;
+GVL_HAIWELL.a_wOutputTotalLengthX10[0] :=
+    UDINT_TO_WORD(udiHaiwellValueX10 / UDINT#65536);
+GVL_HAIWELL.a_wOutputTotalLengthX10[1] :=
+    UDINT_TO_WORD(udiHaiwellValueX10 MOD UDINT#65536);
+
+IF GVL_Runtime.stLineState.rSpeedMPerMin <= 0.0 THEN
+    uiHaiwellSpeedX10 := UINT#0;
+ELSIF GVL_Runtime.stLineState.rSpeedMPerMin >= 6553.5 THEN
+    uiHaiwellSpeedX10 := UINT#65535;
+ELSE
+    uiHaiwellSpeedX10 :=
+        REAL_TO_UINT(GVL_Runtime.stLineState.rSpeedMPerMin * 10.0);
+END_IF;
+GVL_HAIWELL.wOutputSpeedX10 := UINT_TO_WORD(uiHaiwellSpeedX10);
+
+GVL_HAIWELL.wOutputStatus := WORD#0;
+IF NOT GVL_Runtime.stLineState.xConfigFault THEN
+    GVL_HAIWELL.wOutputStatus :=
+        GVL_HAIWELL.wOutputStatus OR WORD#16#0001;
+END_IF;
+IF GVL_Runtime.stLineState.xMoving THEN
+    GVL_HAIWELL.wOutputStatus :=
+        GVL_HAIWELL.wOutputStatus OR WORD#16#0002;
+END_IF;
+IF GVL_Runtime.a_stHscState[6].xDataValid THEN
+    GVL_HAIWELL.wOutputStatus :=
+        GVL_HAIWELL.wOutputStatus OR WORD#16#0004;
+END_IF;
+IF GVL_Runtime.stLineState.xConfigFault THEN
+    GVL_HAIWELL.wOutputStatus :=
+        GVL_HAIWELL.wOutputStatus OR WORD#16#0010;
+END_IF;
+
+GVL_HAIWELL.a_wQueueOverflowCount[0] :=
+    GVL_SCADA.a_wQueueOverflowCount[0];
+GVL_HAIWELL.a_wQueueOverflowCount[1] :=
+    GVL_SCADA.a_wQueueOverflowCount[1];
+GVL_HAIWELL.wCollectorHeartbeat := GVL_SCADA.wCollectorHeartbeat;
+GVL_HAIWELL.wReserved2157 := WORD#0;
+
+
+// Выпуск за смену по шестому энкодеру.
+uliShiftLengthMm :=
+    (PersistentVars.uliShiftOutputPulses
+     * UDINT_TO_ULINT(GVL_Constants.c_udiWheelCircumferenceMm))
+    / UDINT_TO_ULINT(GVL_Constants.c_udiEncoderPulsesPerRevolution);
+
+uliHaiwellValueX10 := uliShiftLengthMm / ULINT#100;
+IF uliHaiwellValueX10 <= ULINT#4294967295 THEN
+    udiHaiwellValueX10 := ULINT_TO_UDINT(uliHaiwellValueX10);
+ELSE
+    udiHaiwellValueX10 := UDINT#4294967295;
+    GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+END_IF;
+GVL_HAIWELL.a_wShiftOutputLengthX10[0] :=
+    UDINT_TO_WORD(udiHaiwellValueX10 / UDINT#65536);
+GVL_HAIWELL.a_wShiftOutputLengthX10[1] :=
+    UDINT_TO_WORD(udiHaiwellValueX10 MOD UDINT#65536);
+
+
+// Суммарный расход сырья за смену по разрешённым раскатам.
+uliHaiwellValueX10 := uliShiftRawTotalMm / ULINT#100;
+IF uliHaiwellValueX10 <= ULINT#4294967295 THEN
+    udiHaiwellValueX10 := ULINT_TO_UDINT(uliHaiwellValueX10);
+ELSE
+    udiHaiwellValueX10 := UDINT#4294967295;
+    GVL_Diagnostics.stSystem.xAnyConfigFault := TRUE;
+END_IF;
+GVL_HAIWELL.a_wShiftRawTotalLengthX10[0] :=
+    UDINT_TO_WORD(udiHaiwellValueX10 / UDINT#65536);
+GVL_HAIWELL.a_wShiftRawTotalLengthX10[1] :=
+    UDINT_TO_WORD(udiHaiwellValueX10 MOD UDINT#65536);
+
+
+// Средняя скорость выпуска рассчитывается за фактически прошедшее время
+// текущего сменного интервала, а не как среднее мгновенных отсчётов.
+rShiftAverageSpeedMPerMin := 0.0;
+IF GVL_Runtime.stShiftState.xRtcValid
+   AND (GVL_Runtime.stShiftState.udiTimestampUtc
+        > PersistentVars.udiShiftStartTimestampUtc) THEN
+
+    udiShiftElapsedSeconds :=
+        GVL_Runtime.stShiftState.udiTimestampUtc
+        - PersistentVars.udiShiftStartTimestampUtc;
+
+    rShiftAverageSpeedMPerMin :=
+        ULINT_TO_REAL(uliShiftLengthMm)
+        * 60.0
+        / UDINT_TO_REAL(udiShiftElapsedSeconds)
+        / 1000.0;
+
+END_IF;
+
+IF rShiftAverageSpeedMPerMin <= 0.0 THEN
+    GVL_HAIWELL.wShiftAverageSpeedX10 := WORD#0;
+ELSIF rShiftAverageSpeedMPerMin >= 6553.5 THEN
+    GVL_HAIWELL.wShiftAverageSpeedX10 := WORD#65535;
+ELSE
+    GVL_HAIWELL.wShiftAverageSpeedX10 :=
+        UINT_TO_WORD(REAL_TO_UINT(rShiftAverageSpeedMPerMin * 10.0));
+END_IF;
+
+GVL_HAIWELL.wShiftStatus := WORD#0;
+IF GVL_Runtime.stShiftState.xRtcValid
+   AND (PersistentVars.usiShiftAccumulatorNumber
+        = GVL_Runtime.stShiftState.usiCurrentShift) THEN
+    GVL_HAIWELL.wShiftStatus := WORD#16#0001;
+END_IF;
+
+GVL_HAIWELL.a_wReserved2208[0] := WORD#0;
+GVL_HAIWELL.a_wReserved2208[1] := WORD#0;
+GVL_HAIWELL.a_wReserved2226[0] := WORD#0;
+GVL_HAIWELL.a_wReserved2226[1] := WORD#0;
+GVL_HAIWELL.a_wReserved2226[2] := WORD#0;
+GVL_HAIWELL.a_wReserved2226[3] := WORD#0;
+
+
+// ============================================================
+// 9. Общая диагностика выполнения программы
+// ============================================================
+
+IF GVL_Diagnostics.stSystem.uliProgramCycles < ULINT#18446744073709551615 THEN
+    GVL_Diagnostics.stSystem.uliProgramCycles :=
+        GVL_Diagnostics.stSystem.uliProgramCycles + ULINT#1;
+ELSE
+    GVL_Diagnostics.stSystem.uliProgramCycles := ULINT#0;
+END_IF;

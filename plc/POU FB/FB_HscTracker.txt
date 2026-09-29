@@ -1,0 +1,112 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_HscTracker
+VAR_INPUT
+    i_udiHscAbs             : UDINT; // Текущее абсолютное значение аппаратного HSC.
+    i_xHscValid             : BOOL;  // TRUE, если HSC подтверждает достоверность значения.
+    i_xHscError             : BOOL;  // TRUE, если аппаратный HSC сообщил об ошибке.
+    i_udiCounterRange       : UDINT; // Число значений HSC до перехода через ноль.
+    i_udiMaxDeltaPerCycle   : UDINT; // Максимально допустимое приращение за цикл ПЛК.
+END_VAR
+
+VAR_IN_OUT
+    iq_stState : ST_HscState; // Рабочее состояние конкретного канала HSC.
+END_VAR
+
+VAR
+    uliCalculatedDelta : ULINT; // Промежуточное приращение без риска переполнения.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+// Одноцикловые и расчётные поля сначала сбрасываются.
+iq_stState.udiPulseDelta := UDINT#0;
+iq_stState.xDataValid := FALSE;
+iq_stState.xJumpDetected := FALSE;
+uliCalculatedDelta := ULINT#0;
+
+
+// Проверяем параметры самого трекера.
+IF (i_udiCounterRange = UDINT#0)
+   OR (i_udiMaxDeltaPerCycle = UDINT#0) THEN
+
+    iq_stState.eStatus := CHANNEL_STATUS_CONFIG_ERROR;
+
+
+// Ошибка HSC имеет приоритет над признаком Validity.
+ELSIF i_xHscError THEN
+
+    iq_stState.eStatus := CHANNEL_STATUS_HSC_ERROR;
+
+
+ELSIF NOT i_xHscValid THEN
+
+    iq_stState.eStatus := CHANNEL_STATUS_HSC_INVALID;
+
+
+// Первый исправный отсчёт используется только как начальная точка.
+ELSIF NOT iq_stState.xInitialized THEN
+
+    iq_stState.udiPreviousAbs := i_udiHscAbs;
+    iq_stState.xInitialized := TRUE;
+    iq_stState.xDataValid := TRUE;
+    iq_stState.eStatus := CHANNEL_STATUS_RUNNING;
+
+
+ELSE
+
+    // Обычное приращение без перехода HSC через ноль.
+    IF i_udiHscAbs >= iq_stState.udiPreviousAbs THEN
+
+        uliCalculatedDelta :=
+            UDINT_TO_ULINT(i_udiHscAbs)
+            - UDINT_TO_ULINT(iq_stState.udiPreviousAbs);
+
+
+    // Переход через заданный диапазон HSC.
+    ELSIF iq_stState.udiPreviousAbs < i_udiCounterRange THEN
+
+        uliCalculatedDelta :=
+            (
+                UDINT_TO_ULINT(i_udiCounterRange)
+                - UDINT_TO_ULINT(iq_stState.udiPreviousAbs)
+            )
+            + UDINT_TO_ULINT(i_udiHscAbs);
+
+
+    // Значение не соответствует настроенному диапазону.
+    ELSE
+
+        uliCalculatedDelta :=
+            UDINT_TO_ULINT(i_udiMaxDeltaPerCycle) + ULINT#1;
+
+    END_IF;
+
+
+    // Запоминаем текущий абсолютный отсчёт как базу следующего цикла.
+    iq_stState.udiPreviousAbs := i_udiHscAbs;
+
+
+    // Реалистичное приращение разрешается использовать дальше.
+    IF uliCalculatedDelta <= UDINT_TO_ULINT(i_udiMaxDeltaPerCycle) THEN
+
+        iq_stState.udiPulseDelta :=
+            ULINT_TO_UDINT(uliCalculatedDelta);
+
+        iq_stState.xDataValid := TRUE;
+        iq_stState.eStatus := CHANNEL_STATUS_RUNNING;
+
+
+    // Огромный скачок отбрасывается и не попадает в метраж.
+    ELSE
+
+        iq_stState.xJumpDetected := TRUE;
+        iq_stState.udiRejectedJumpCount :=
+            iq_stState.udiRejectedJumpCount + UDINT#1;
+
+        iq_stState.eStatus := CHANNEL_STATUS_COUNTER_JUMP;
+
+    END_IF;
+
+END_IF;

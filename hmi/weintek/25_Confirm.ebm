@@ -1,0 +1,71 @@
+macro_definition_begin
+    "id": "25"
+    "name": "Confirm"
+    "startup": "false"
+    "periodic": [ "false" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+short State=0, State2=0
+short Babina1=0, Babina2=0, Babina3=0, Babina4=0, Babina5=0, PUp=0, PDown=0, Sir=0, Obor=0, Mash=0
+short Command=10, Sequence=0, Roll=0, Side=0, Reason=0
+  
+  GetData(State, "Local HMI", LW, 13, 1)
+  GETBIT(State, Babina1, 0)
+  GETBIT(State, Babina2, 1)
+  GETBIT(State, Babina3, 2)
+  GETBIT(State, Babina4, 3)
+  GETBIT(State, Babina5, 4)
+  GETBIT(State, PUp, 5)
+  GETBIT(State, PDown, 6)
+ 
+  GetData(State2, "Local HMI", LW, 14, 1)
+  GETBIT(State2, Sir, 0)
+  GETBIT(State2, Obor, 1)
+  GETBIT(State2, Mash, 2)
+  
+  if Babina1 then
+    Roll=1
+  end if
+  if Babina2 then
+    Roll=2
+  end if
+  if Babina3 then
+    Roll=3
+  end if
+  if Babina4 then
+    Roll=4
+  end if
+  if Babina5 then
+    Roll=5
+  end if
+  if PDown then
+    Side=2
+  end if
+  if PUp then
+    Side=1
+  end if
+  if Sir then
+    Reason=1
+  end if
+  if Obor then
+    Reason=2
+  end if
+  if Mash then
+    Reason=3
+  end if
+
+if (Roll>0 and Side>0 and Reason>0) then
+  GetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2330, 1)
+  Sequence=Sequence+1
+  if (Sequence==0) then
+    Sequence=1
+  end if
+
+  SetData(Roll, "Schneider MODBUS TCP/IP", %MW, 2362, 1)
+  SetData(Side, "Schneider MODBUS TCP/IP", %MW, 2363, 1)
+  SetData(Reason, "Schneider MODBUS TCP/IP", %MW, 2364, 1)
+  SetData(Sequence, "Schneider MODBUS TCP/IP", %MW, 2361, 1)
+  SetData(Command, "Schneider MODBUS TCP/IP", %MW, 2360, 1)
+end if
+end macro_command

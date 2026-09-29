@@ -1,0 +1,148 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_RollCounter
+VAR_INPUT
+    i_udiPulseDelta             : UDINT; // Новые импульсы этого раската за цикл ПЛК.
+    i_xPulseDataValid           : BOOL;  // TRUE, если приращение разрешено учитывать.
+    i_xSplice                   : BOOL;  // Отфильтрованная команда SPLICE.
+    i_xReset                    : BOOL;  // Отфильтрованная команда ручного RESET.
+    i_udiPulsesPerRevolution    : UDINT; // Импульсов энкодера за один оборот.
+    i_udiWheelCircumferenceMm   : UDINT; // Окружность мерного колеса в миллиметрах.
+    i_uliManualResetMinLengthMm : ULINT; // Минимальная длина для учёта ручного RESET.
+END_VAR
+
+VAR_IN_OUT
+    iq_stState : ST_RollState; // Состояние конкретного раската.
+END_VAR
+
+VAR
+    xPreviousSplice : BOOL;  // Уровень SPLICE на предыдущем цикле.
+    xPreviousReset  : BOOL;  // Уровень RESET на предыдущем цикле.
+    xSpliceRising   : BOOL;  // Одноцикловый фронт SPLICE.
+    xResetRising    : BOOL;  // Одноцикловый фронт RESET.
+    xCommandsArmed  : BOOL;  // Команды разрешены после первого отпускания обеих кнопок.
+    uliLengthValue  : ULINT; // Промежуточный расчёт длины в миллиметрах.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+// Эти признаки активны только один цикл программы.
+iq_stState.xRollCompleted := FALSE;
+iq_stState.xShortResetDiscarded := FALSE;
+xSpliceRising := FALSE;
+xResetRising := FALSE;
+
+
+// После запуска обе кнопки должны хотя бы один раз быть отпущены.
+// Это не позволяет зажатой кнопке завершить рулон при старте ПЛК.
+IF NOT xCommandsArmed THEN
+
+    IF NOT i_xSplice AND NOT i_xReset THEN
+        xCommandsArmed := TRUE;
+    END_IF;
+
+ELSE
+
+    xSpliceRising := i_xSplice AND NOT xPreviousSplice;
+    xResetRising := i_xReset AND NOT xPreviousReset;
+
+END_IF;
+
+
+// Проверяем параметры пересчёта.
+iq_stState.xConfigFault :=
+    (i_udiPulsesPerRevolution = UDINT#0)
+    OR (i_udiWheelCircumferenceMm = UDINT#0);
+
+
+// Нумерация внутренних рулонов каждого канала начинается с единицы.
+IF iq_stState.udiRollSequenceNumber = UDINT#0 THEN
+    iq_stState.udiRollSequenceNumber := UDINT#1;
+END_IF;
+
+
+// Накапливаем только достоверное приращение HSC.
+IF i_xPulseDataValid AND NOT iq_stState.xConfigFault THEN
+
+    iq_stState.uliCurrentRollPulses :=
+        iq_stState.uliCurrentRollPulses
+        + UDINT_TO_ULINT(i_udiPulseDelta);
+
+
+    // импульсы * окружность / импульсов на оборот = миллиметры
+    uliLengthValue :=
+        iq_stState.uliCurrentRollPulses
+        * UDINT_TO_ULINT(i_udiWheelCircumferenceMm);
+
+    iq_stState.uliCurrentLengthMm :=
+        uliLengthValue
+        / UDINT_TO_ULINT(i_udiPulsesPerRevolution);
+
+END_IF;
+
+
+// SPLICE всегда завершает рулон.
+// RESET завершает рулон только при достижении установленного порога.
+IF NOT iq_stState.xConfigFault
+   AND
+   (
+       xSpliceRising
+       OR
+       (
+           xResetRising
+           AND
+           (iq_stState.uliCurrentLengthMm >= i_uliManualResetMinLengthMm)
+       )
+   ) THEN
+
+    iq_stState.uliPreviousRollPulses :=
+        iq_stState.uliCurrentRollPulses;
+
+    iq_stState.uliPreviousRollLengthMm :=
+        iq_stState.uliCurrentLengthMm;
+
+
+    iq_stState.uliCurrentRollPulses := ULINT#0;
+    iq_stState.uliCurrentLengthMm := ULINT#0;
+
+
+    IF iq_stState.udiRollSequenceNumber < UDINT#4294967295 THEN
+        iq_stState.udiRollSequenceNumber :=
+            iq_stState.udiRollSequenceNumber + UDINT#1;
+    ELSE
+        iq_stState.udiRollSequenceNumber := UDINT#1;
+    END_IF;
+
+
+    IF xSpliceRising THEN
+        iq_stState.eLastEndReason := ROLL_END_SPLICE;
+    ELSE
+        iq_stState.eLastEndReason := ROLL_END_RESET;
+    END_IF;
+
+
+    iq_stState.xRollCompleted := TRUE;
+
+
+// Короткий ручной RESET очищает только текущий рулон.
+// Предыдущий учтённый рулон и номер последовательности не изменяются.
+ELSIF NOT iq_stState.xConfigFault AND xResetRising THEN
+
+    iq_stState.uliLastDiscardedLengthMm :=
+        iq_stState.uliCurrentLengthMm;
+
+    iq_stState.uliDiscardedTotalLengthMm :=
+        iq_stState.uliDiscardedTotalLengthMm
+        + iq_stState.uliCurrentLengthMm;
+
+    iq_stState.uliCurrentRollPulses := ULINT#0;
+    iq_stState.uliCurrentLengthMm := ULINT#0;
+    iq_stState.xShortResetDiscarded := TRUE;
+
+END_IF;
+
+
+// Запоминаем уровни кнопок для обнаружения следующего фронта.
+xPreviousSplice := i_xSplice;
+xPreviousReset := i_xReset;

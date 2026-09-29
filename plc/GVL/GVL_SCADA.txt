@@ -1,0 +1,28 @@
+VAR_GLOBAL
+    a_wEventPacket AT %MW2000 : ARRAY[0..11] OF WORD; // Событие протокола v2: 12 последовательных слов.
+    wEventReady AT %MW2012 : WORD;                    // 1 — пакет содержит событие, 0 — очередь пуста.
+    wQueueCount AT %MW2013 : WORD;                    // Количество неподтверждённых событий в очереди.
+    wQueueCapacity AT %MW2014 : WORD;                 // Полная ёмкость очереди, сейчас 128 событий.
+    wQueueStatus AT %MW2015 : WORD;                   // 0 — пусто, 1 — есть данные, 2 — заполнена, 3 — ошибка хранилища, 4 — исчерпан EventId.
+
+    a_wAckEventId AT %MW2016 : ARRAY[0..1] OF WORD;   // EventId UDINT, подтверждаемый сервером; старшее слово первым.
+    wAckCommand AT %MW2018 : WORD;                    // Сервер записывает 16#A55A после сохранения события на диск.
+    wCollectorHeartbeat AT %MW2019 : WORD;            // Счётчик жизни службы-сборщика; записывается сервером.
+    wLastAckResult AT %MW2020 : WORD;                 // 0 — подтверждений не было, 1 — принято, 2 — отклонено.
+    a_wQueueOverflowCount AT %MW2021 : ARRAY[0..1] OF WORD; // Число событий, отвергнутых из-за полной очереди.
+
+    // Сервер -> PLC: новый заказ ЛГК. Параметры и sequence записываются первыми,
+    // wOrderCommand = 16#4F52 записывается последним. PLC очищает команду сам.
+    wOrderCommand AT %MW2030 : WORD;
+    wOrderSequence AT %MW2031 : WORD;
+    a_wOrderDatabaseId AT %MW2032 : ARRAY[0..1] OF WORD;     // NumZ из ExternalProductionData, старшее слово первым.
+    a_wOrderTechnicalCard AT %MW2034 : ARRAY[0..1] OF WORD;  // NumTK, старшее слово первым.
+    a_wOrderDisplayNumber AT %MW2036 : ARRAY[0..1] OF WORD;  // Числовая часть Zakaz для экрана, старшее слово первым.
+    wOrderSourceShift AT %MW2038 : WORD;                     // NumSM от сервера.
+    wOrderNominalSpeed AT %MW2039 : WORD;                    // Efficiency, единицы исходной БД.
+    wOrderChangeoverTenthsMin AT %MW2040 : WORD;             // ReconfigurationT x 10.
+
+    // PLC -> сервер: результат применения заказа.
+    wOrderApplyResult AT %MW2041 : WORD;                     // 0 — нет, 1 — принят, 2 — неверная команда, 3 — неверные данные.
+    wLastOrderSequence AT %MW2042 : WORD;
+END_VAR

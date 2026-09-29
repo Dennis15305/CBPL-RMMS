@@ -1,0 +1,175 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_ShiftManager
+VAR_INPUT
+    i_usiShift1StartHour    : USINT; // Начало первой смены, час 0...23.
+    i_usiShift2StartHour    : USINT; // Начало второй смены, час 0...23.
+    i_udiUtcOffsetSeconds   : UDINT; // Смещение местного времени относительно UTC в секундах.
+END_VAR
+
+VAR_IN_OUT
+    iq_stState : ST_ShiftState; // Номер смены и диагностические данные RTC.
+END_VAR
+
+VAR
+    diUtcTimestamp      : DINT;  // Время RTC в секундах с 01.01.1970 UTC; тип функции GetRtc.
+    udiUtcTimestamp     : UDINT; // То же время в беззнаковом формате для арифметики.
+    udiLocalTimestamp   : UDINT; // UNIX-время после добавления местного смещения.
+    udiLocalSecondsDay  : UDINT; // Местное число секунд от начала суток.
+    udiDaysRemaining    : UDINT; // Полные дни от 01.01.1970 для расчёта календарной даты.
+    usiNewShift         : USINT; // Рассчитанный номер смены.
+    uiYear              : UINT;  // Промежуточный год.
+    uiMonth             : UINT;  // Промежуточный месяц.
+    uiDaysInYear        : UINT;  // Число дней в рассматриваемом году.
+    uiDaysInMonth       : UINT;  // Число дней в рассматриваемом месяце.
+    xLeapYear           : BOOL;  // TRUE для високосного года.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+iq_stState.xShiftChanged := FALSE;
+
+
+// GetRtc входит в уже подключённую библиотеку M241 PLCSystem.
+// В текущем проекте пространство имён этой библиотеки — SEC.
+diUtcTimestamp := SEC.GetRtc();
+
+
+IF (diUtcTimestamp > DINT#0)
+   AND (i_usiShift1StartHour < USINT#24)
+   AND (i_usiShift2StartHour < USINT#24)
+   AND (i_usiShift1StartHour < i_usiShift2StartHour) THEN
+
+    udiUtcTimestamp := DINT_TO_UDINT(diUtcTimestamp);
+    iq_stState.udiTimestampUtc := udiUtcTimestamp;
+    iq_stState.udiRtcError := UDINT#0;
+
+    udiLocalTimestamp := udiUtcTimestamp + i_udiUtcOffsetSeconds;
+    udiLocalSecondsDay := udiLocalTimestamp MOD UDINT#86400;
+
+
+    iq_stState.uiLocalHour :=
+        UDINT_TO_UINT(udiLocalSecondsDay / UDINT#3600);
+
+    iq_stState.uiLocalMinute :=
+        UDINT_TO_UINT(
+            (udiLocalSecondsDay MOD UDINT#3600)
+            / UDINT#60
+        );
+
+    iq_stState.uiLocalSecond :=
+        UDINT_TO_UINT(udiLocalSecondsDay MOD UDINT#60);
+
+
+    // Календарная дата рассчитывается из целого числа дней UNIX-времени.
+    // Цикл ограничен текущим диапазоном UDINT и выполняется не более 137 раз.
+    udiDaysRemaining := udiLocalTimestamp / UDINT#86400;
+    uiYear := UINT#1970;
+
+    xLeapYear :=
+        ((uiYear MOD UINT#4) = UINT#0)
+        AND
+        (
+            ((uiYear MOD UINT#100) <> UINT#0)
+            OR ((uiYear MOD UINT#400) = UINT#0)
+        );
+    IF xLeapYear THEN
+        uiDaysInYear := UINT#366;
+    ELSE
+        uiDaysInYear := UINT#365;
+    END_IF;
+
+    WHILE udiDaysRemaining >= UINT_TO_UDINT(uiDaysInYear) DO
+        udiDaysRemaining :=
+            udiDaysRemaining - UINT_TO_UDINT(uiDaysInYear);
+        uiYear := uiYear + UINT#1;
+
+        xLeapYear :=
+            ((uiYear MOD UINT#4) = UINT#0)
+            AND
+            (
+                ((uiYear MOD UINT#100) <> UINT#0)
+                OR ((uiYear MOD UINT#400) = UINT#0)
+            );
+        IF xLeapYear THEN
+            uiDaysInYear := UINT#366;
+        ELSE
+            uiDaysInYear := UINT#365;
+        END_IF;
+    END_WHILE;
+
+    uiMonth := UINT#1;
+    WHILE uiMonth <= UINT#12 DO
+        CASE uiMonth OF
+            UINT#2:
+                IF xLeapYear THEN
+                    uiDaysInMonth := UINT#29;
+                ELSE
+                    uiDaysInMonth := UINT#28;
+                END_IF;
+            UINT#4, UINT#6, UINT#9, UINT#11:
+                uiDaysInMonth := UINT#30;
+            ELSE
+                uiDaysInMonth := UINT#31;
+        END_CASE;
+
+        IF udiDaysRemaining < UINT_TO_UDINT(uiDaysInMonth) THEN
+            EXIT;
+        END_IF;
+
+        udiDaysRemaining :=
+            udiDaysRemaining - UINT_TO_UDINT(uiDaysInMonth);
+        uiMonth := uiMonth + UINT#1;
+    END_WHILE;
+
+    iq_stState.uiLocalYear := uiYear;
+    iq_stState.uiLocalMonth := uiMonth;
+    iq_stState.uiLocalDay := UDINT_TO_UINT(udiDaysRemaining) + UINT#1;
+
+
+    IF (iq_stState.uiLocalHour >= USINT_TO_UINT(i_usiShift1StartHour))
+       AND (iq_stState.uiLocalHour < USINT_TO_UINT(i_usiShift2StartHour)) THEN
+
+        usiNewShift := USINT#1;
+
+    ELSE
+
+        usiNewShift := USINT#2;
+
+    END_IF;
+
+
+    IF (iq_stState.usiCurrentShift <> USINT#0)
+       AND (iq_stState.usiCurrentShift <> usiNewShift) THEN
+
+        iq_stState.xShiftChanged := TRUE;
+
+    END_IF;
+
+
+    iq_stState.usiCurrentShift := usiNewShift;
+    iq_stState.xRtcValid := TRUE;
+
+
+ELSE
+
+    iq_stState.xRtcValid := FALSE;
+    iq_stState.usiCurrentShift := USINT#0;
+    iq_stState.uiLocalHour := UINT#0;
+    iq_stState.uiLocalMinute := UINT#0;
+    iq_stState.uiLocalSecond := UINT#0;
+    iq_stState.uiLocalYear := UINT#0;
+    iq_stState.uiLocalMonth := UINT#0;
+    iq_stState.uiLocalDay := UINT#0;
+    iq_stState.udiTimestampUtc := UDINT#0;
+
+    // 1 означает, что RTC ещё не содержит корректного UNIX-времени.
+    IF diUtcTimestamp <= DINT#0 THEN
+        iq_stState.udiRtcError := UDINT#1;
+    ELSE
+        // Максимальное значение означает ошибку настройки границ смен.
+        iq_stState.udiRtcError := UDINT#4294967295;
+    END_IF;
+
+END_IF;

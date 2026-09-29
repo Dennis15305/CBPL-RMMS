@@ -1,0 +1,39 @@
+macro_definition_begin
+    "id": "26"
+    "name": "macro_NewPLC_Display"
+    "startup": "false"
+    "periodic": [ "true", "5" ]
+    "interlock": [ "false" ]
+macro_definition_end
+
+macro_command main()
+
+unsigned short PlcWords[2]={0,0}
+unsigned short HmiWords[2]={0,0}
+
+GetData(PlcWords[0], "Schneider MODBUS TCP/IP", %MW, 2310, 2)
+HmiWords[0]=PlcWords[1]
+HmiWords[1]=PlcWords[0]
+SetData(HmiWords[0], "Local HMI", LW, 100, 2)
+
+GetData(PlcWords[0], "Schneider MODBUS TCP/IP", %MW, 2312, 2)
+HmiWords[0]=PlcWords[1]
+HmiWords[1]=PlcWords[0]
+SetData(HmiWords[0], "Local HMI", LW, 102, 2)
+
+GetData(PlcWords[0], "Schneider MODBUS TCP/IP", %MW, 2314, 2)
+HmiWords[0]=PlcWords[1]
+HmiWords[1]=PlcWords[0]
+SetData(HmiWords[0], "Local HMI", LW, 104, 2)
+
+GetData(PlcWords[0], "Schneider MODBUS TCP/IP", %MW, 2316, 2)
+HmiWords[0]=PlcWords[1]
+HmiWords[1]=PlcWords[0]
+SetData(HmiWords[0], "Local HMI", LW, 106, 2)
+
+GetData(PlcWords[0], "Schneider MODBUS TCP/IP", %MW, 2318, 2)
+HmiWords[0]=PlcWords[1]
+HmiWords[1]=PlcWords[0]
+SetData(HmiWords[0], "Local HMI", LW, 108, 2)
+
+end macro_command

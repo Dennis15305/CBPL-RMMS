@@ -1,0 +1,53 @@
+VAR_GLOBAL
+    // ========================================================
+    // PLC -> HMI. Только чтение со стороны панели, MW2300...2359
+    // ========================================================
+    wSignature AT %MW2300 : WORD;
+    wProtocolVersion AT %MW2301 : WORD;
+    wPlcHeartbeat AT %MW2302 : WORD;
+    wStateCode AT %MW2303 : WORD;
+    wStatusBits AT %MW2304 : WORD;
+    wAlarmBits AT %MW2305 : WORD;
+    wShiftNumber AT %MW2306 : WORD;
+    wLocalHour AT %MW2307 : WORD;
+    wLocalMinute AT %MW2308 : WORD;
+    wLocalSecond AT %MW2309 : WORD;
+    a_wOrderNumber AT %MW2310 : ARRAY[0..1] OF WORD;
+    a_wOrderLengthDm AT %MW2312 : ARRAY[0..1] OF WORD;
+    a_wOrderAreaX100 AT %MW2314 : ARRAY[0..1] OF WORD;
+    a_wShiftLengthDm AT %MW2316 : ARRAY[0..1] OF WORD;
+    a_wShiftAreaX100 AT %MW2318 : ARRAY[0..1] OF WORD;
+    wSpeedDmPerMin AT %MW2320 : WORD;
+    wChangeoverRemainingTenthsMin AT %MW2321 : WORD;
+    wChangeoverSetpointTenthsMin AT %MW2322 : WORD;
+    wStartDetectLengthDm AT %MW2323 : WORD;
+    wAreaCoefficientX100 AT %MW2324 : WORD;
+    wLastBreakPoint AT %MW2325 : WORD;
+    wLastBreakSide AT %MW2326 : WORD;
+    wLastBreakReason AT %MW2327 : WORD;
+    wPackingComplete AT %MW2328 : WORD;
+    wLastCommandResult AT %MW2329 : WORD;
+    wLastProcessedSequence AT %MW2330 : WORD;
+    wPhysicalControlEnabled AT %MW2331 : WORD; // Всегда 0: HMI не управляет оборудованием.
+    a_wOrderDatabaseId AT %MW2332 : ARRAY[0..1] OF WORD;
+    a_wOrderTechnicalCard AT %MW2334 : ARRAY[0..1] OF WORD;
+    wOrderSourceShift AT %MW2336 : WORD;
+    wOrderNominalSpeed AT %MW2337 : WORD;
+    wOperatorNumber AT %MW2338 : WORD;
+    a_wReservedRead AT %MW2339 : ARRAY[0..20] OF WORD;
+
+    // ========================================================
+    // HMI -> PLC. Панель пишет только MW2360...2399
+    // Команда передаётся последней; sequence меняется для каждого действия.
+    // ========================================================
+    wCommandCode AT %MW2360 : WORD;
+    wCommandSequence AT %MW2361 : WORD;
+    wCommandParam0 AT %MW2362 : WORD;
+    wCommandParam1 AT %MW2363 : WORD;
+    wCommandParam2 AT %MW2364 : WORD;
+    wSettingStartDetectLengthDm AT %MW2365 : WORD;
+    wSettingAreaCoefficientX100 AT %MW2366 : WORD;
+    wSettingChangeoverTenthsMin AT %MW2367 : WORD;
+    wHmiHeartbeat AT %MW2368 : WORD;
+    a_wReservedWrite AT %MW2369 : ARRAY[0..30] OF WORD;
+END_VAR

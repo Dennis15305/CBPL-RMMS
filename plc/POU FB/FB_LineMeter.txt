@@ -1,0 +1,95 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_LineMeter
+VAR_INPUT
+    i_udiPulseDelta           : UDINT; // Новые импульсы шестого энкодера за цикл ПЛК.
+    i_xPulseDataValid         : BOOL;  // TRUE, если приращение разрешено учитывать.
+    i_udiPulsesPerRevolution  : UDINT; // Импульсов энкодера за один оборот.
+    i_udiWheelCircumferenceMm : UDINT; // Окружность мерного колеса в миллиметрах.
+    i_tSpeedSample            : TIME;  // Интервал расчёта скорости линии.
+END_VAR
+
+VAR_IN_OUT
+    iq_stState : ST_LineState; // Общий метраж и скорость линии.
+END_VAR
+
+VAR
+    fbSpeedSample       : TON;   // Таймер периодического расчёта скорости.
+    uliWindowPulses     : ULINT; // Импульсы за текущий интервал скорости.
+    uliWindowLengthMm   : ULINT; // Перемещение за интервал скорости, мм.
+    uliTotalLengthValue : ULINT; // Промежуточный расчёт общего метража.
+    udiSampleTimeMs     : UDINT; // Интервал скорости в миллисекундах.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+iq_stState.xConfigFault :=
+    (i_udiPulsesPerRevolution = UDINT#0)
+    OR (i_udiWheelCircumferenceMm = UDINT#0)
+    OR (i_tSpeedSample <= T#0ms);
+
+
+// Накапливаем общий метраж и окно скорости только по исправным данным.
+IF i_xPulseDataValid AND NOT iq_stState.xConfigFault THEN
+
+    iq_stState.uliTotalPulses :=
+        iq_stState.uliTotalPulses
+        + UDINT_TO_ULINT(i_udiPulseDelta);
+
+    uliWindowPulses :=
+        uliWindowPulses
+        + UDINT_TO_ULINT(i_udiPulseDelta);
+
+
+    uliTotalLengthValue :=
+        iq_stState.uliTotalPulses
+        * UDINT_TO_ULINT(i_udiWheelCircumferenceMm);
+
+    iq_stState.uliTotalLengthMm :=
+        uliTotalLengthValue
+        / UDINT_TO_ULINT(i_udiPulsesPerRevolution);
+
+END_IF;
+
+
+// Самоперезапускающийся таймер выдаёт импульс примерно раз в i_tSpeedSample.
+fbSpeedSample(
+    IN := NOT fbSpeedSample.Q,
+    PT := i_tSpeedSample
+);
+
+
+IF fbSpeedSample.Q THEN
+
+    IF NOT iq_stState.xConfigFault AND i_xPulseDataValid THEN
+
+        uliWindowLengthMm :=
+            (
+                uliWindowPulses
+                * UDINT_TO_ULINT(i_udiWheelCircumferenceMm)
+            )
+            / UDINT_TO_ULINT(i_udiPulsesPerRevolution);
+
+        udiSampleTimeMs := TIME_TO_UDINT(i_tSpeedSample);
+
+
+        // мм * 60 / мс = метров в минуту.
+        iq_stState.rSpeedMPerMin :=
+            ULINT_TO_REAL(uliWindowLengthMm)
+            * 60.0
+            / UDINT_TO_REAL(udiSampleTimeMs);
+
+        iq_stState.xMoving := uliWindowPulses > ULINT#0;
+
+    ELSE
+
+        iq_stState.rSpeedMPerMin := 0.0;
+        iq_stState.xMoving := FALSE;
+
+    END_IF;
+
+
+    uliWindowPulses := ULINT#0;
+
+END_IF;

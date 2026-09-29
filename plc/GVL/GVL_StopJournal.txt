@@ -1,0 +1,32 @@
+VAR_GLOBAL
+    // Снимок первого события. PLC -> сервер, 2400...2422.
+    wSignature AT %MW2400 : WORD;                 // 16#534A = SJ.
+    wVersion AT %MW2401 : WORD;                   // Версия протокола 1.
+    a_wEventId AT %MW2402 : ARRAY[0..1] OF WORD; // Старшее слово первым.
+    a_wTimestampUtc AT %MW2404 : ARRAY[0..1] OF WORD;
+    wKind AT %MW2406 : WORD;
+    wStateCode AT %MW2407 : WORD;
+    wShiftNumber AT %MW2408 : WORD;
+    a_wOrderNumber AT %MW2409 : ARRAY[0..1] OF WORD;
+    a_wOrderLengthDm AT %MW2411 : ARRAY[0..1] OF WORD;
+    a_wOrderAreaX100 AT %MW2413 : ARRAY[0..1] OF WORD;
+    wSpeedDmPerMin AT %MW2415 : WORD;
+    wOperatorNumber AT %MW2416 : WORD;
+    wChangeoverSetpointTenthsMin AT %MW2417 : WORD;
+    wAlarmBits AT %MW2418 : WORD;
+    wBreakPoint AT %MW2419 : WORD;
+    wBreakSide AT %MW2420 : WORD;
+    wBreakReason AT %MW2421 : WORD;
+    a_wShiftLengthDm AT %MW2422 : ARRAY[0..1] OF WORD;
+    a_wShiftAreaX100 AT %MW2424 : ARRAY[0..1] OF WORD;
+    wEventReady AT %MW2426 : WORD;
+    wQueueCount AT %MW2427 : WORD;
+    wQueueStatus AT %MW2428 : WORD;               // 0=норма, 1=полна, 2=переполнение, 3=повреждение, 4=ID исчерпан.
+    // Сервер -> PLC: ID записать первым, команду 16#A55B — последней.
+    a_wAckEventId AT %MW2429 : ARRAY[0..1] OF WORD;
+    wAckCommand AT %MW2431 : WORD;
+    wLastAckResult AT %MW2432 : WORD;             // 0=нет, 1=принят, 2=отклонён.
+    a_wOverflowCount AT %MW2433 : ARRAY[0..1] OF WORD;
+    wHeartbeat AT %MW2435 : WORD;
+    a_wReserved AT %MW2436 : ARRAY[0..23] OF WORD;
+END_VAR

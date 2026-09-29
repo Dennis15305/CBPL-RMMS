@@ -1,0 +1,14 @@
+VAR_GLOBAL
+    a_wHmi1Tx : ARRAY[0..12] OF WORD; // Регистры VP 2000...200C панели раската №1.
+    a_wHmi2Tx : ARRAY[0..12] OF WORD; // Регистры VP 2000...200C панели раската №2.
+    a_wHmi3Tx : ARRAY[0..12] OF WORD; // Регистры VP 2000...200C панели раската №3.
+    a_wHmi4Tx : ARRAY[0..12] OF WORD; // Регистры VP 2000...200C панели раската №4.
+    a_wHmi5Tx : ARRAY[0..12] OF WORD; // Регистры VP 2000...200C панели раската №5.
+
+    // Системный пакет установки встроенных часов DWIN через VP 009C...009F.
+    a_wHmi1RtcSync : ARRAY[0..3] OF WORD;
+    a_wHmi2RtcSync : ARRAY[0..3] OF WORD;
+    a_wHmi3RtcSync : ARRAY[0..3] OF WORD;
+    a_wHmi4RtcSync : ARRAY[0..3] OF WORD;
+    a_wHmi5RtcSync : ARRAY[0..3] OF WORD;
+END_VAR

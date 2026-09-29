@@ -1,0 +1,434 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_StopMachine
+VAR_INPUT
+    i_uliTotalLengthMm               : ULINT; // Общий метраж шестого энкодера.
+    i_rSpeedMPerMin                  : REAL;  // Измеренная скорость линии.
+    i_xMoving                        : BOOL;  // За последний интервал были импульсы линии.
+    i_xLineDataValid                 : BOOL;  // Данные шестого HSC разрешено использовать.
+    i_usiCurrentShift                : USINT; // Номер текущей смены 1 или 2.
+    i_xShiftChanged                  : BOOL;  // Одноцикловый признак смены.
+    i_xRtcValid                      : BOOL;  // Часы ПЛК исправны.
+    i_wRestoredState                 : WORD;  // Последняя причина из отдельного постоянного блока.
+    i_wCommandCode                   : WORD;  // Код команды HMI.
+    i_wCommandSequence               : WORD;  // Новый номер для каждого нажатия.
+    i_wParam0                        : WORD;  // Параметр команды 0.
+    i_wParam1                        : WORD;  // Параметр команды 1.
+    i_wParam2                        : WORD;  // Параметр команды 2.
+    i_wSettingStartDetectLengthDm    : WORD;  // Новый порог подтверждения движения, 0,1 м.
+    i_wSettingAreaCoefficientX100    : WORD;  // Новый коэффициент площади x 100.
+    i_wSettingChangeoverTenthsMin    : WORD;  // Новое время переналадки, 0,1 мин.
+    i_wServerOrderCommand            : WORD;  // 16#4F52 применяется после записи всего пакета заказа.
+    i_wServerOrderSequence           : WORD;  // Новый номер для каждой записи заказа сервером.
+    i_udiServerOrderDatabaseId       : UDINT; // NumZ из базы данных.
+    i_udiServerOrderTechnicalCard    : UDINT; // NumTK из базы данных.
+    i_udiServerOrderNumber           : UDINT; // Числовая часть Zakaz для отображения.
+    i_wServerOrderSourceShift        : WORD;  // NumSM из базы данных.
+    i_wServerOrderNominalSpeed       : WORD;  // Efficiency из базы данных.
+    i_wServerChangeoverTenthsMin     : WORD;  // ReconfigurationT x 10.
+END_VAR
+
+VAR_IN_OUT
+    iq_stPersistent : ST_StopMachinePersistent;
+    iq_stState      : ST_StopMachineState;
+END_VAR
+
+VAR_OUTPUT
+    q_xCommandConsumed : BOOL; // PLC принял пакет команды и может очистить CommandCode.
+    q_xServerOrderCommandConsumed : BOOL; // PLC обработал/отклонил и может очистить серверную команду.
+    q_xBreakRecorded : BOOL; // Приняты подробности обрыва, включая изменение причины в том же состоянии.
+END_VAR
+
+VAR
+    fbNoFeed                 : TON;
+    fbChangeover             : TON;
+    uliRunDetectBaselineMm   : ULINT;
+    uliOrderDeltaMm          : ULINT;
+    uliShiftDeltaMm          : ULINT;
+    uliOrderLengthDm         : ULINT;
+    uliShiftLengthDm         : ULINT;
+    uliOrderAreaX100         : ULINT;
+    uliShiftAreaX100         : ULINT;
+    udiChangeoverTimeMs      : UDINT;
+    udiElapsedMs             : UDINT;
+    udiRemainingMs           : UDINT;
+    xSettingsValid           : BOOL;
+    xBreakRecordedPulse      : BOOL;
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+q_xCommandConsumed := FALSE;
+q_xServerOrderCommandConsumed := FALSE;
+q_xBreakRecorded := FALSE;
+xBreakRecordedPulse := FALSE;
+
+
+// При первом запуске либо после изменения структуры задаём безопасные значения.
+IF iq_stPersistent.wConfigSignature <> GVL_Constants.c_wStopMachineSignature THEN
+    iq_stPersistent.wConfigSignature := GVL_Constants.c_wStopMachineSignature;
+    iq_stPersistent.udiOrderNumber := UDINT#0;
+    iq_stPersistent.udiOrderDatabaseId := UDINT#0;
+    iq_stPersistent.udiOrderTechnicalCard := UDINT#0;
+    iq_stPersistent.uiOrderSourceShift := UINT#0;
+    iq_stPersistent.uiOrderNominalSpeed := UINT#0;
+    iq_stPersistent.uiOperatorNumber := UINT#0;
+    iq_stPersistent.wLastServerOrderSequence := i_wServerOrderSequence;
+    iq_stPersistent.uliOrderBaselineMm := i_uliTotalLengthMm;
+    iq_stPersistent.uliShiftBaselineMm := i_uliTotalLengthMm;
+    iq_stPersistent.uiAreaCoefficientX100 := GVL_Constants.c_uiStopDefaultAreaCoefficientX100;
+    iq_stPersistent.uiStartDetectLengthDm := GVL_Constants.c_uiStopDefaultStartDetectLengthDm;
+    iq_stPersistent.uiChangeoverSetpointTenthsMin := GVL_Constants.c_uiStopDefaultChangeoverTenthsMin;
+    iq_stPersistent.usiLastShiftNumber := i_usiCurrentShift;
+END_IF;
+
+
+IF NOT iq_stState.xInitialized THEN
+    // После перезапуска не объявляем работу до импульсов энкодера.
+    // Известную ручную причину остановки, если она была, сохраняем.
+    IF (i_wRestoredState = GVL_Constants.c_wStopStateStopped)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateNoFeed)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateChangeover)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateProduction)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStatePpr)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateLunch)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateRepair)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateAlarm)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateTechnology)
+       OR (i_wRestoredState = GVL_Constants.c_wStopStateBreak) THEN
+        iq_stState.wStateCode := i_wRestoredState;
+    ELSE
+        iq_stState.wStateCode := WORD#0; // Пока не определено движение после запуска.
+    END_IF;
+    iq_stState.wLastCommandResult := GVL_Constants.c_wStopResultNone;
+    iq_stState.wLastProcessedSequence := i_wCommandSequence;
+    iq_stState.wLastServerOrderResult := WORD#0;
+    iq_stState.wLastServerOrderSequence := iq_stPersistent.wLastServerOrderSequence;
+    iq_stState.xServerOrderValid := iq_stPersistent.udiOrderDatabaseId <> UDINT#0;
+    iq_stState.xPackingComplete := FALSE;
+    iq_stState.xCommandRejected := FALSE;
+    uliRunDetectBaselineMm := i_uliTotalLengthMm;
+    iq_stState.xInitialized := TRUE;
+END_IF;
+
+
+// Заказ может изменить только серверный интерфейс. Сервер пишет параметры,
+// затем новый sequence и только после этого команду 16#4F52.
+IF i_wServerOrderCommand <> WORD#0 THEN
+    q_xServerOrderCommandConsumed := TRUE;
+
+    IF i_wServerOrderSequence <> iq_stPersistent.wLastServerOrderSequence THEN
+        iq_stPersistent.wLastServerOrderSequence := i_wServerOrderSequence;
+        iq_stState.wLastServerOrderSequence := i_wServerOrderSequence;
+
+        IF i_wServerOrderCommand <> GVL_Constants.c_wServerOrderApplyCommand THEN
+            iq_stState.wLastServerOrderResult := WORD#2;
+        ELSIF (i_udiServerOrderDatabaseId = UDINT#0)
+           OR (i_wServerOrderSourceShift = WORD#0)
+           OR (i_wServerChangeoverTenthsMin > WORD#6000) THEN
+            iq_stState.wLastServerOrderResult := WORD#3;
+        ELSE
+            iq_stPersistent.udiOrderDatabaseId := i_udiServerOrderDatabaseId;
+            iq_stPersistent.udiOrderTechnicalCard := i_udiServerOrderTechnicalCard;
+            iq_stPersistent.udiOrderNumber := i_udiServerOrderNumber;
+            iq_stPersistent.uiOrderSourceShift := WORD_TO_UINT(i_wServerOrderSourceShift);
+            iq_stPersistent.uiOrderNominalSpeed := WORD_TO_UINT(i_wServerOrderNominalSpeed);
+            iq_stPersistent.uiChangeoverSetpointTenthsMin :=
+                WORD_TO_UINT(i_wServerChangeoverTenthsMin);
+            iq_stPersistent.uliOrderBaselineMm := i_uliTotalLengthMm;
+
+            iq_stState.xPackingComplete := FALSE;
+            iq_stState.xServerOrderValid := TRUE;
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateChangeover;
+            iq_stState.wLastServerOrderResult := WORD#1;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+        END_IF;
+    END_IF;
+END_IF;
+
+
+iq_stState.xConfigFault :=
+    (iq_stPersistent.uiAreaCoefficientX100 = UINT#0)
+    OR (iq_stPersistent.uiAreaCoefficientX100 > UINT#1000)
+    OR (iq_stPersistent.uiStartDetectLengthDm = UINT#0)
+    OR (iq_stPersistent.uiStartDetectLengthDm > UINT#6000)
+    OR (iq_stPersistent.uiChangeoverSetpointTenthsMin > UINT#6000);
+
+
+// Сброс аппаратного счётчика не должен создавать отрицательные или огромные дельты.
+IF i_uliTotalLengthMm < iq_stPersistent.uliOrderBaselineMm THEN
+    iq_stPersistent.uliOrderBaselineMm := i_uliTotalLengthMm;
+END_IF;
+
+IF i_uliTotalLengthMm < iq_stPersistent.uliShiftBaselineMm THEN
+    iq_stPersistent.uliShiftBaselineMm := i_uliTotalLengthMm;
+END_IF;
+
+
+// Сравнение с постоянным номером смены также ловит смену, прошедшую при
+// выключенном PLC, когда однократного xShiftChanged уже не было.
+IF ((i_usiCurrentShift = USINT#1) OR (i_usiCurrentShift = USINT#2))
+   AND (i_xShiftChanged
+        OR (iq_stPersistent.usiLastShiftNumber <> i_usiCurrentShift)) THEN
+    iq_stPersistent.uliShiftBaselineMm := i_uliTotalLengthMm;
+    iq_stPersistent.usiLastShiftNumber := i_usiCurrentShift;
+END_IF;
+
+
+// Любой ненулевой CommandCode очищается. Действие выполняется только один раз
+// при новом sequence, поэтому оставшийся после перезапуска пакет не повторится.
+IF i_wCommandCode <> WORD#0 THEN
+    q_xCommandConsumed := TRUE;
+
+    IF i_wCommandSequence <> iq_stState.wLastProcessedSequence THEN
+        iq_stState.wLastProcessedSequence := i_wCommandSequence;
+        iq_stState.wLastCommandResult := GVL_Constants.c_wStopResultAccepted;
+        iq_stState.xCommandRejected := FALSE;
+
+        // Причина остановки принимается только при исправном энкодере и
+        // отсутствии движения. HMI не может объявить работу без движения.
+        IF ((i_wCommandCode = WORD#2)
+            AND (NOT i_xMoving OR NOT i_xLineDataValid))
+           OR (((i_wCommandCode = WORD#1)
+                OR ((i_wCommandCode >= WORD#3) AND (i_wCommandCode <= WORD#10)))
+               AND (i_xMoving OR NOT i_xLineDataValid)) THEN
+            iq_stState.wLastCommandResult := GVL_Constants.c_wStopResultInvalidState;
+            iq_stState.xCommandRejected := TRUE;
+        ELSE
+        CASE i_wCommandCode OF
+
+        1: // СТОП: меняет только состояние линии в отчёте.
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateStopped;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        2: // ПУСК: меняет только состояние линии в отчёте.
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateRunning;
+
+        3: // ПЕРЕНАЛАДКА. Заказ задаёт только сервер; HMI меняет лишь состояние.
+            iq_stState.xPackingComplete := FALSE;
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateChangeover;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        4: // ПРОИЗВОДСТВО
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateProduction;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        5: // ОБЕД
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateLunch;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        6: // ППР
+            iq_stState.wStateCode := GVL_Constants.c_wStopStatePpr;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        7: // РЕМОНТ
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateRepair;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        8: // АВАРИЯ
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateAlarm;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        9: // ТЕХНОЛОГИЯ
+            iq_stState.wStateCode := GVL_Constants.c_wStopStateTechnology;
+            uliRunDetectBaselineMm := i_uliTotalLengthMm;
+
+        10: // ОБРЫВ: точка 1...5, сторона 1...2, причина 1...3.
+            IF (i_wParam0 >= WORD#1) AND (i_wParam0 <= WORD#5)
+               AND (i_wParam1 >= WORD#1) AND (i_wParam1 <= WORD#2)
+               AND (i_wParam2 >= WORD#1) AND (i_wParam2 <= WORD#3) THEN
+                iq_stState.usiLastBreakPoint := WORD_TO_USINT(i_wParam0);
+                iq_stState.usiLastBreakSide := WORD_TO_USINT(i_wParam1);
+                iq_stState.usiLastBreakReason := WORD_TO_USINT(i_wParam2);
+                iq_stState.wStateCode := GVL_Constants.c_wStopStateBreak;
+                uliRunDetectBaselineMm := i_uliTotalLengthMm;
+                xBreakRecordedPulse := TRUE;
+                q_xBreakRecorded := TRUE;
+            ELSE
+                iq_stState.wLastCommandResult := GVL_Constants.c_wStopResultInvalidParameter;
+                iq_stState.xCommandRejected := TRUE;
+            END_IF;
+
+        11: // УПАКОВКА ЗАВЕРШЕНА
+            iq_stState.xPackingComplete := TRUE;
+
+        12: // НОМЕР ОПЕРАТОРА. Param0=0 выполняет выход пользователя.
+            iq_stPersistent.uiOperatorNumber := WORD_TO_UINT(i_wParam0);
+
+        20: // ПРИМЕНИТЬ НАСТРОЙКИ одним атомарным пакетом.
+            xSettingsValid :=
+                (i_wSettingStartDetectLengthDm >= WORD#1)
+                AND (i_wSettingStartDetectLengthDm <= WORD#6000)
+                AND (i_wSettingAreaCoefficientX100 >= WORD#1)
+                AND (i_wSettingAreaCoefficientX100 <= WORD#1000)
+                AND (i_wSettingChangeoverTenthsMin <= WORD#6000);
+
+            IF xSettingsValid THEN
+                iq_stPersistent.uiStartDetectLengthDm := WORD_TO_UINT(i_wSettingStartDetectLengthDm);
+                iq_stPersistent.uiAreaCoefficientX100 := WORD_TO_UINT(i_wSettingAreaCoefficientX100);
+                iq_stPersistent.uiChangeoverSetpointTenthsMin := WORD_TO_UINT(i_wSettingChangeoverTenthsMin);
+            ELSE
+                iq_stState.wLastCommandResult := GVL_Constants.c_wStopResultInvalidParameter;
+                iq_stState.xCommandRejected := TRUE;
+            END_IF;
+
+            ELSE
+                iq_stState.wLastCommandResult := GVL_Constants.c_wStopResultInvalidCode;
+                iq_stState.xCommandRejected := TRUE;
+
+        END_CASE;
+        END_IF;
+    END_IF;
+END_IF;
+
+
+// Достоверное движение шестого энкодера возвращает статус RUNNING.
+// xMoving обновляется раз в секунду; старый порог 50 м здесь не используется.
+IF i_xMoving
+   AND i_xLineDataValid
+   AND NOT iq_stState.xConfigFault
+   AND (iq_stState.wStateCode <> GVL_Constants.c_wStopStateRunning) THEN
+    iq_stState.wStateCode := GVL_Constants.c_wStopStateRunning;
+END_IF;
+
+
+// Если подтверждённая работа прекратилась, после задержки фиксируем отсутствие подачи.
+fbNoFeed(
+    IN := ((iq_stState.wStateCode = GVL_Constants.c_wStopStateRunning)
+           OR (iq_stState.wStateCode = WORD#0))
+          AND i_xLineDataValid
+          AND NOT i_xMoving,
+    PT := GVL_Constants.c_tStopNoFeedDelay
+);
+
+IF fbNoFeed.Q THEN
+    iq_stState.wStateCode := GVL_Constants.c_wStopStateNoFeed;
+    uliRunDetectBaselineMm := i_uliTotalLengthMm;
+END_IF;
+
+
+// Таймер переналадки. Нулевое задание означает, что контроль времени отключён.
+udiChangeoverTimeMs :=
+    UINT_TO_UDINT(iq_stPersistent.uiChangeoverSetpointTenthsMin)
+    * UDINT#6000;
+
+fbChangeover(
+    IN := (iq_stState.wStateCode = GVL_Constants.c_wStopStateChangeover)
+          AND (iq_stPersistent.uiChangeoverSetpointTenthsMin > UINT#0),
+    PT := UDINT_TO_TIME(udiChangeoverTimeMs)
+);
+
+iq_stState.xChangeoverOverdue := fbChangeover.Q;
+
+IF (iq_stState.wStateCode = GVL_Constants.c_wStopStateChangeover)
+   AND (iq_stPersistent.uiChangeoverSetpointTenthsMin > UINT#0) THEN
+    udiElapsedMs := TIME_TO_UDINT(fbChangeover.ET);
+    IF udiElapsedMs < udiChangeoverTimeMs THEN
+        udiRemainingMs := udiChangeoverTimeMs - udiElapsedMs;
+        iq_stState.uiChangeoverRemainingTenthsMin :=
+            UDINT_TO_UINT((udiRemainingMs + UDINT#5999) / UDINT#6000);
+    ELSE
+        iq_stState.uiChangeoverRemainingTenthsMin := UINT#0;
+    END_IF;
+ELSE
+    iq_stState.uiChangeoverRemainingTenthsMin :=
+        iq_stPersistent.uiChangeoverSetpointTenthsMin;
+END_IF;
+
+
+// Расчёт выпуска заказа и смены от независимых базовых отметок.
+uliOrderDeltaMm := i_uliTotalLengthMm - iq_stPersistent.uliOrderBaselineMm;
+uliShiftDeltaMm := i_uliTotalLengthMm - iq_stPersistent.uliShiftBaselineMm;
+uliOrderLengthDm := uliOrderDeltaMm / ULINT#100;
+uliShiftLengthDm := uliShiftDeltaMm / ULINT#100;
+
+IF uliOrderLengthDm <= ULINT#4294967295 THEN
+    iq_stState.udiCurrentOrderLengthDm := ULINT_TO_UDINT(uliOrderLengthDm);
+ELSE
+    iq_stState.udiCurrentOrderLengthDm := UDINT#4294967295;
+END_IF;
+
+IF uliShiftLengthDm <= ULINT#4294967295 THEN
+    iq_stState.udiShiftLengthDm := ULINT_TO_UDINT(uliShiftLengthDm);
+ELSE
+    iq_stState.udiShiftLengthDm := UDINT#4294967295;
+END_IF;
+
+uliOrderAreaX100 :=
+    uliOrderLengthDm * UINT_TO_ULINT(iq_stPersistent.uiAreaCoefficientX100) / ULINT#10;
+uliShiftAreaX100 :=
+    uliShiftLengthDm * UINT_TO_ULINT(iq_stPersistent.uiAreaCoefficientX100) / ULINT#10;
+
+IF uliOrderAreaX100 <= ULINT#4294967295 THEN
+    iq_stState.udiCurrentOrderAreaX100 := ULINT_TO_UDINT(uliOrderAreaX100);
+ELSE
+    iq_stState.udiCurrentOrderAreaX100 := UDINT#4294967295;
+END_IF;
+
+IF uliShiftAreaX100 <= ULINT#4294967295 THEN
+    iq_stState.udiShiftAreaX100 := ULINT_TO_UDINT(uliShiftAreaX100);
+ELSE
+    iq_stState.udiShiftAreaX100 := UDINT#4294967295;
+END_IF;
+
+iq_stState.udiOrderNumber := iq_stPersistent.udiOrderNumber;
+iq_stState.udiOrderDatabaseId := iq_stPersistent.udiOrderDatabaseId;
+iq_stState.udiOrderTechnicalCard := iq_stPersistent.udiOrderTechnicalCard;
+iq_stState.uiOrderSourceShift := iq_stPersistent.uiOrderSourceShift;
+iq_stState.uiOrderNominalSpeed := iq_stPersistent.uiOrderNominalSpeed;
+iq_stState.uiOperatorNumber := iq_stPersistent.uiOperatorNumber;
+
+IF i_rSpeedMPerMin <= 0.0 THEN
+    iq_stState.uiSpeedDmPerMin := UINT#0;
+ELSIF i_rSpeedMPerMin >= 6553.5 THEN
+    iq_stState.uiSpeedDmPerMin := UINT#65535;
+ELSE
+    iq_stState.uiSpeedDmPerMin := REAL_TO_UINT(i_rSpeedMPerMin * 10.0);
+END_IF;
+
+
+// Биты состояния предназначены только для индикации и диагностики HMI.
+iq_stState.wStatusBits := WORD#16#0001; // bit 0: блок активен.
+IF i_xRtcValid THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0002;
+END_IF;
+IF i_xMoving THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0004;
+END_IF;
+IF i_xLineDataValid THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0008;
+END_IF;
+IF iq_stState.xChangeoverOverdue THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0010;
+END_IF;
+IF iq_stState.xCommandRejected THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0040;
+END_IF;
+IF NOT iq_stState.xConfigFault THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0080;
+END_IF;
+IF xBreakRecordedPulse THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0100;
+END_IF;
+IF iq_stState.xServerOrderValid THEN
+    iq_stState.wStatusBits := iq_stState.wStatusBits OR WORD#16#0200;
+END_IF;
+
+
+iq_stState.wAlarmBits := WORD#0;
+IF iq_stState.wStateCode = GVL_Constants.c_wStopStateNoFeed THEN
+    iq_stState.wAlarmBits := iq_stState.wAlarmBits OR WORD#16#0001;
+END_IF;
+IF NOT i_xLineDataValid THEN
+    iq_stState.wAlarmBits := iq_stState.wAlarmBits OR WORD#16#0002;
+END_IF;
+IF iq_stState.xChangeoverOverdue THEN
+    iq_stState.wAlarmBits := iq_stState.wAlarmBits OR WORD#16#0004;
+END_IF;
+IF iq_stState.xCommandRejected THEN
+    iq_stState.wAlarmBits := iq_stState.wAlarmBits OR WORD#16#0008;
+END_IF;
+IF iq_stState.xConfigFault THEN
+    iq_stState.wAlarmBits := iq_stState.wAlarmBits OR WORD#16#0010;
+END_IF;

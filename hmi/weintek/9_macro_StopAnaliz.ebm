@@ -1,0 +1,21 @@
+macro_definition_begin
+    "id": "9"
+    "name": "macro_StopAnaliz"
+    "startup": "false"
+    "periodic": [ "true", "10" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+short Data=0
+short STOP=1
+short NOT_STOP=0
+
+GetData(Data, "Schneider MODBUS TCP/IP", %MW, 2303, 1)
+
+  if (Data==2 or Data==4 or Data==8 or Data==16 or Data==32 or Data==64 or Data==128 or Data==256 or Data==512 or Data==1024 or Data==2048) then
+    SetData(STOP, "Local HMI", LW, 43, 1)
+  else
+    SetData(NOT_STOP, "Local HMI", LW, 43, 1)
+  end if
+  
+end macro_command

@@ -1,0 +1,64 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_ThreeFlash
+VAR_INPUT
+    i_xTrigger    : BOOL; // Новый фронт запускает последовательность заново.
+    i_tHalfPeriod : TIME; // Длительность жёлтой и обычной полуволн.
+END_VAR
+
+VAR_OUTPUT
+    q_xFlashOn : BOOL; // TRUE ровно на трёх жёлтых полуволнах.
+    q_xActive  : BOOL; // TRUE в течение всей последовательности из шести полуволн.
+END_VAR
+
+VAR
+    fbPhaseTimer : TON;
+    xTriggerPrevious : BOOL;
+    xTriggerRising   : BOOL;
+    xResetTimer      : BOOL;
+    usiPhase         : USINT; // 0 — ожидание; 1...6 — три пары ВКЛ/ВЫКЛ.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+xTriggerRising := i_xTrigger AND NOT xTriggerPrevious;
+xTriggerPrevious := i_xTrigger;
+
+
+// Каждое новое подтверждённое нажатие начинает три вспышки заново.
+IF xTriggerRising THEN
+    usiPhase := USINT#1;
+    xResetTimer := TRUE;
+END_IF;
+
+
+// После каждой полуволны TON сбрасывается на один цикл программы.
+IF xResetTimer THEN
+    fbPhaseTimer(
+        IN := FALSE,
+        PT := i_tHalfPeriod
+    );
+    xResetTimer := FALSE;
+ELSE
+    fbPhaseTimer(
+        IN := usiPhase <> USINT#0,
+        PT := i_tHalfPeriod
+    );
+
+    IF fbPhaseTimer.Q THEN
+        IF usiPhase >= USINT#6 THEN
+            usiPhase := USINT#0;
+        ELSE
+            usiPhase := usiPhase + USINT#1;
+        END_IF;
+        xResetTimer := TRUE;
+    END_IF;
+END_IF;
+
+
+q_xActive := usiPhase <> USINT#0;
+q_xFlashOn :=
+    (usiPhase = USINT#1)
+    OR (usiPhase = USINT#3)
+    OR (usiPhase = USINT#5);

@@ -1,0 +1,15 @@
+TYPE ST_ShiftState :
+STRUCT
+    usiCurrentShift : USINT;  // Номер текущей смены: 1 или 2.
+    xRtcValid       : BOOL;   // RTC контроллера прочитан без ошибки.
+    xShiftChanged   : BOOL;   // Одноцикловый признак смены номера смены.
+    uiLocalHour     : UINT;   // Текущий местный час, 0...23.
+    uiLocalMinute   : UINT;   // Текущая местная минута, 0...59.
+    uiLocalSecond   : UINT;   // Текущая местная секунда, 0...59.
+    uiLocalYear     : UINT;   // Год местного времени, например 2026.
+    uiLocalMonth    : UINT;   // Месяц местного времени, 1...12.
+    uiLocalDay      : UINT;   // День месяца местного времени, 1...31.
+    udiTimestampUtc : UDINT;  // Текущее UNIX-время в секундах UTC для отметки событий.
+    udiRtcError     : UDINT;  // Код ошибки функции чтения RTC, 0 означает отсутствие ошибки.
+END_STRUCT
+END_TYPE

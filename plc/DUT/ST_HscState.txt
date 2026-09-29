@@ -1,0 +1,11 @@
+TYPE ST_HscState :
+STRUCT
+    xInitialized         : BOOL;             // Получен первый корректный абсолютный отсчёт HSC.
+    udiPreviousAbs       : UDINT;            // Абсолютное значение HSC на предыдущем цикле.
+    udiPulseDelta        : UDINT;            // Число новых импульсов за текущий цикл ПЛК.
+    xDataValid           : BOOL;             // Приращение импульсов разрешено использовать.
+    xJumpDetected        : BOOL;             // Одноцикловый признак недопустимого скачка HSC.
+    udiRejectedJumpCount : UDINT;            // Количество отброшенных скачков HSC.
+    eStatus              : E_ChannelStatus;  // Текущее состояние канала.
+END_STRUCT
+END_TYPE

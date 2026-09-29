@@ -1,0 +1,17 @@
+VAR_GLOBAL PERSISTENT RETAIN
+    a_stEventQueue       : ARRAY[0..127] OF ST_RollEvent; // Постоянная кольцевая очередь на 128 событий.
+    uiEventQueueHead     : UINT := UINT#0;                // Индекс первого события, ожидающего подтверждения.
+    uiEventQueueTail     : UINT := UINT#0;                // Индекс ячейки для записи следующего события.
+    uiEventQueueCount    : UINT := UINT#0;                // Текущее количество событий в очереди.
+    udiNextEventId       : UDINT := UDINT#1;              // Уникальный номер, который получит следующее событие.
+    udiQueueOverflowCount: UDINT := UDINT#0;              // Число событий, не помещённых из-за полной очереди.
+    a_stRollState        : ARRAY[1..5] OF ST_RollState;   // Сохраняемое состояние текущего и предыдущего рулона каждого раската.
+    stStopMachine        : ST_StopMachinePersistent;      // Заказ, базовые метражи и настройки Стопмашины ЛГК.
+    usiShiftAccumulatorNumber : USINT;                    // Смена, к которой относятся накопители центральной HMI.
+    udiShiftStartTimestampUtc : UDINT;                    // UTC-время начала текущего интервала накопления.
+    a_uliShiftRollPulses : ARRAY[1..5] OF ULINT;           // Импульсы каждого раската с начала текущей смены.
+    uliShiftOutputPulses : ULINT;                          // Импульсы шестого энкодера с начала текущей смены.
+    dwLayoutSignature    : DWORD;                          // Сигнатура разметки; ноль или несовпадение запускает безопасную инициализацию.
+    wLayoutVersion       : WORD;                           // Версия разметки постоянной памяти.
+    stStopJournal        : ST_StopJournalPersistent;       // Независимая очередь событий ЛГК; добавлена в конец разметки.
+END_VAR

@@ -1,0 +1,15 @@
+TYPE ST_RollState :
+STRUCT
+    uliCurrentRollPulses       : ULINT;           // Накопленные импульсы текущего рулона.
+    uliCurrentLengthMm         : ULINT;           // Длина текущего рулона в миллиметрах.
+    uliPreviousRollPulses      : ULINT;           // Импульсы последнего учтённого рулона.
+    uliPreviousRollLengthMm    : ULINT;           // Длина последнего учтённого рулона в миллиметрах.
+    udiRollSequenceNumber      : UDINT;           // Порядковый номер текущего рулона внутри канала.
+    eLastEndReason             : E_RollEndReason; // Причина завершения предыдущего учтённого рулона.
+    xRollCompleted             : BOOL;            // Одноцикловый сигнал завершения учтённого рулона.
+    xShortResetDiscarded       : BOOL;            // Одноцикловый сигнал RESET при длине менее 100 м.
+    uliLastDiscardedLengthMm   : ULINT;           // Длина последнего отброшенного короткого рулона.
+    uliDiscardedTotalLengthMm  : ULINT;           // Общая отброшенная длина после коротких RESET.
+    xConfigFault               : BOOL;            // Ошибка параметров энкодера или мерного колеса.
+END_STRUCT
+END_TYPE

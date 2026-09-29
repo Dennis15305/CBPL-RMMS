@@ -1,0 +1,10 @@
+* text=auto
+*.st text eol=crlf
+*.txt text eol=crlf
+*.ebm text eol=crlf
+*.cs text eol=crlf
+*.sql text eol=crlf
+*.png binary
+*.tft binary
+*.hmi binary
+

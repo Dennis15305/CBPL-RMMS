@@ -1,0 +1,119 @@
+macro_definition_begin
+    "id": "10"
+    "name": "State_Param"
+    "startup": "false"
+    "periodic": [ "true", "5" ]
+    "interlock": [ "false" ]
+macro_definition_end
+macro_command main()
+short T=true, F=false, State=0, result=0, Heartbeat=0
+short Setting=0, NoOrder=0, NoIn=0, Dinner=0, Defect=0, PPR=0, FaultClr=0, Alarm=0, Start=0, Stop=0, Babina1=0, Babina2=0, Babina3=0, Babina4=0, Babina5=0, NoLogStop=0, DI=0, ErConMB=0
+short State2=0, NoFeed=0, DataInvalid=0, ChangeOverdue=0, CommandRejected=0, ConfigFault=0, RtcFault=0, CollectorOffline=0
+	short Null=0
+
+GetData(State, "Schneider MODBUS TCP/IP", %MW, 2303, 1)
+GetData(Heartbeat, "Schneider MODBUS TCP/IP", %MW, 2368, 1)
+Heartbeat=Heartbeat+1
+if (Heartbeat==0) then
+  Heartbeat=1
+end if
+SetData(Heartbeat, "Schneider MODBUS TCP/IP", %MW, 2368, 1)
+
+  GETBIT(State, Start, 0)
+  GETBIT(State, Stop, 1)
+  GETBIT(State, NoLogStop, 2)
+  GETBIT(State, DI, 3)
+  GETBIT(State, Setting, 4)
+  GETBIT(State, NoOrder, 5)
+  GETBIT(State, PPR, 6)
+  GETBIT(State, NoIn, 7)
+  GETBIT(State, FaultClr, 8)
+  GETBIT(State, Alarm, 9)
+  GETBIT(State, Defect, 10)
+  GETBIT(State, Babina1, 11)
+  GETBIT(State, Babina2, 12)
+  GETBIT(State, Babina3, 13)
+  GETBIT(State, Babina4, 14)
+  GETBIT(State, Babina5, 15)
+  
+GetData(State2, "Schneider MODBUS TCP/IP", %MW, 2305, 1)
+  GETBIT(State2, NoFeed, 0)
+  GETBIT(State2, DataInvalid, 1)
+  GETBIT(State2, ChangeOverdue, 2)
+  GETBIT(State2, CommandRejected, 3)
+  GETBIT(State2, ConfigFault, 4)
+  GETBIT(State2, RtcFault, 5)
+  GETBIT(State2, CollectorOffline, 6)
+  
+if Start then
+   SetData(T, "Local HMI", LW_Bit, 1500, 1)//зеленый
+    SetData( Null, "Local HMI", LW, 20, 1)
+    SetData( Null, "Local HMI", LB, 2, 1)
+    
+	short LOGOutCom=3
+	SetDataEx(LOGOutCom, "Local HMI", "Команда UAC", 1)
+else
+   SetData(F, "Local HMI", LW_Bit, 1500, 1)//зеленый
+end if
+
+if Setting then
+   SetData(T, "Local HMI", LW_Bit, 1501, 1)//желтый
+else
+   SetData(F, "Local HMI", LW_Bit, 1501, 1)//желтый
+end if
+
+if NoLogStop or NoOrder or NoIn or Dinner or Defect then
+   SetData(T, "Local HMI", LW_Bit, 1502, 1)//оранжевый
+else
+   SetData(F, "Local HMI", LW_Bit, 1502, 1)//оранжевый
+end if
+
+if FaultClr or Alarm then
+   SetData(T, "Local HMI", LW_Bit, 1503, 1)// красный
+else
+   SetData(F, "Local HMI", LW_Bit, 1503, 1)// красный
+end if
+
+if DI then
+   SetData(T, "Local HMI", LW_Bit, 1504, 1) // Синий
+else
+   SetData(F, "Local HMI", LW_Bit, 1504, 1) // Синий
+end if
+
+if PPR then
+   SetData(T, "Local HMI", LW_Bit, 1505, 1) // Коричнивый
+else
+   SetData(F, "Local HMI", LW_Bit, 1505, 1) // Коричневый
+end if
+
+if Babina1 or Babina2 or Babina3 or Babina4 or Babina5 then
+   SetData(T, "Local HMI", LW_Bit, 1506, 1) // Коричнивый
+else
+   SetData(F, "Local HMI", LW_Bit, 1506, 1) // Коричневый
+end if
+
+
+if FaultClr or PPR then
+   SetData(T, "Local HMI", LB, 5, 1)// кнопка завершегния работ
+else
+   SetData(F, "Local HMI", LB, 5, 1)// Кнопка завершения работ
+end if
+
+if NoFeed or DataInvalid or ChangeOverdue or CommandRejected or ConfigFault or RtcFault or CollectorOffline then
+   SetData(T, "Local HMI", LB, 6, 1)//  
+else
+   SetData(F, "Local HMI", LB, 6, 1)//  
+end if
+
+if CollectorOffline then
+   SetData(T, "Local HMI", LB, 7, 1)// Сработка сигнала нет связи с оборудованием
+else
+   SetData(F, "Local HMI", LB, 7, 1)// Сработка сигнала нет связи с оборудованием
+end if
+
+short to_End_restor=0
+  GetData(to_End_restor, "Schneider MODBUS TCP/IP", %MW, 2321, 1)
+  SetData(to_End_restor, "Local HMI", LW, 10, 1)
+  
+
+end macro_command

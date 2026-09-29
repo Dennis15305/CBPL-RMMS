@@ -1,0 +1,151 @@
+// ==================== DECLARATION ====================
+
+FUNCTION_BLOCK FB_RollEventQueue
+VAR_INPUT
+    i_a_xEnqueue       : ARRAY[1..5] OF BOOL;         // Одноцикловые запросы добавления от пяти раскатов.
+    i_a_stEvent        : ARRAY[1..5] OF ST_RollEvent; // Данные новых событий; EventId назначит очередь.
+    i_udiAckEventId    : UDINT;                       // EventId, подтверждённый службой после записи в SQLite.
+    i_wAckCommand      : WORD;                        // Команда 16#A55A подтверждает готовность AckEventId.
+END_VAR
+
+VAR_IN_OUT
+    iq_a_stQueue        : ARRAY[0..127] OF ST_RollEvent; // Постоянный массив событий из PersistentVars.
+    iq_uiQueueHead      : UINT;                          // Индекс первого события очереди.
+    iq_uiQueueTail      : UINT;                          // Индекс следующей свободной ячейки.
+    iq_uiQueueCount     : UINT;                          // Количество событий в очереди.
+    iq_udiNextEventId   : UDINT;                         // Следующий уникальный EventId.
+    iq_udiOverflowCount : UDINT;                         // Счётчик событий, не попавших в полную очередь.
+END_VAR
+
+VAR_OUTPUT
+    q_xEventReady        : BOOL;                       // TRUE: на выходе находится событие для сервера.
+    q_stCurrentEvent     : ST_RollEvent;               // Первое событие, ожидающее передачи и подтверждения.
+    q_uiQueueCount       : UINT;                       // Текущая заполненность очереди для диагностики.
+    q_xQueueFull         : BOOL;                       // TRUE: заняты все 128 ячеек.
+    q_xStorageFault      : BOOL;                       // Повреждены индексы или счётчик постоянной очереди.
+    q_xEventIdExhausted  : BOOL;                       // Достигнут максимальный UDINT EventId.
+    q_xAckAccepted       : BOOL;                       // Одноцикловый признак принятого подтверждения.
+    q_xAckRejected       : BOOL;                       // Одноцикловый признак неверного подтверждения.
+    q_xAckCommandConsumed: BOOL;                       // Требует очистить регистр команды подтверждения.
+    q_a_xEnqueued        : ARRAY[1..5] OF BOOL;        // Какие запросы были успешно помещены в очередь.
+END_VAR
+
+VAR
+    iChannel     : INT;          // Индекс обработки запросов пяти раскатов.
+    stEventToAdd : ST_RollEvent; // Копия события перед назначением уникального EventId.
+    stEmptyEvent : ST_RollEvent; // Пустое значение выхода, когда очередь не содержит событий.
+END_VAR
+
+VAR CONSTANT
+    c_uiQueueCapacity : UINT  := UINT#128;                  // Количество ячеек постоянной очереди.
+    c_uiLastQueueIndex: UINT  := UINT#127;                  // Последний допустимый индекс массива.
+    c_wAckCommand     : WORD  := WORD#16#A55A;              // Защитная команда подтверждения сервера.
+    c_udiMaxEventId   : UDINT := UDINT#4294967295;        // Максимальное значение UDINT.
+END_VAR
+
+
+// ==================== IMPLEMENTATION ====================
+
+// Одноцикловые выходы сбрасываются в начале каждого вызова.
+q_xAckAccepted := FALSE;
+q_xAckRejected := FALSE;
+q_xAckCommandConsumed := FALSE;
+q_xEventIdExhausted := FALSE;
+
+FOR iChannel := 1 TO 5 DO
+    q_a_xEnqueued[iChannel] := FALSE;
+END_FOR;
+
+
+// Проверяем целостность служебных данных, восстановленных после включения ПЛК.
+q_xStorageFault :=
+    (iq_uiQueueHead > c_uiLastQueueIndex)
+    OR (iq_uiQueueTail > c_uiLastQueueIndex)
+    OR (iq_uiQueueCount > c_uiQueueCapacity)
+    OR (iq_udiNextEventId = UDINT#0);
+
+
+IF NOT q_xStorageFault THEN
+
+    // Сначала обрабатываем подтверждение, чтобы при полной очереди
+    // в этом же цикле освободилось место для нового события.
+    IF i_wAckCommand = c_wAckCommand THEN
+
+        q_xAckCommandConsumed := TRUE;
+
+        IF (iq_uiQueueCount > UINT#0)
+           AND (iq_a_stQueue[iq_uiQueueHead].udiEventId = i_udiAckEventId) THEN
+
+            IF iq_uiQueueHead >= c_uiLastQueueIndex THEN
+                iq_uiQueueHead := UINT#0;
+            ELSE
+                iq_uiQueueHead := iq_uiQueueHead + UINT#1;
+            END_IF;
+
+            iq_uiQueueCount := iq_uiQueueCount - UINT#1;
+            q_xAckAccepted := TRUE;
+
+        ELSE
+
+            // Очередь пустая либо сервер подтвердил не текущее событие.
+            q_xAckRejected := TRUE;
+
+        END_IF;
+
+    END_IF;
+
+
+    // За один цикл могут одновременно завершиться несколько раскатов.
+    FOR iChannel := 1 TO 5 DO
+
+        IF i_a_xEnqueue[iChannel] THEN
+
+            IF (iq_uiQueueCount < c_uiQueueCapacity)
+               AND (iq_udiNextEventId < c_udiMaxEventId) THEN
+
+                stEventToAdd := i_a_stEvent[iChannel];
+                stEventToAdd.udiEventId := iq_udiNextEventId;
+
+                iq_a_stQueue[iq_uiQueueTail] := stEventToAdd;
+
+                IF iq_uiQueueTail >= c_uiLastQueueIndex THEN
+                    iq_uiQueueTail := UINT#0;
+                ELSE
+                    iq_uiQueueTail := iq_uiQueueTail + UINT#1;
+                END_IF;
+
+                iq_uiQueueCount := iq_uiQueueCount + UINT#1;
+                iq_udiNextEventId := iq_udiNextEventId + UDINT#1;
+                q_a_xEnqueued[iChannel] := TRUE;
+
+            ELSIF iq_udiNextEventId >= c_udiMaxEventId THEN
+
+                // Теоретическая защита; в реальной эксплуатации этот предел недостижим.
+                q_xEventIdExhausted := TRUE;
+
+            ELSE
+
+                // Очередь заполнена: событие не перезаписывает более старые данные.
+                IF iq_udiOverflowCount < UDINT#4294967295 THEN
+                    iq_udiOverflowCount := iq_udiOverflowCount + UDINT#1;
+                END_IF;
+
+            END_IF;
+
+        END_IF;
+
+    END_FOR;
+
+END_IF;
+
+
+// Сервер всегда видит только первое неподтверждённое событие.
+q_uiQueueCount := iq_uiQueueCount;
+q_xQueueFull := iq_uiQueueCount >= c_uiQueueCapacity;
+q_xEventReady := (iq_uiQueueCount > UINT#0) AND NOT q_xStorageFault;
+
+IF q_xEventReady THEN
+    q_stCurrentEvent := iq_a_stQueue[iq_uiQueueHead];
+ELSE
+    q_stCurrentEvent := stEmptyEvent;
+END_IF;
