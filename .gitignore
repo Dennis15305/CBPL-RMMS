@@ -29,9 +29,15 @@ config.toml
 *.rar
 *.projectarchive
 
+# Reviewed local-only binary artifacts
+assets/cbpl-rmms-logo.png
+hmi/dwin/*.png
+hmi/dwin/*.tft
+
 # Editors and operating systems
 .idea/
 .vscode/
 Thumbs.db
 .DS_Store
+
 
